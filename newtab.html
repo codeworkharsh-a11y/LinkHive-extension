@@ -1,0 +1,576 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>LinkHive</title>
+  <link href="fonts/fonts.css" rel="stylesheet" />
+  <link href="style.css" rel="stylesheet" />
+  <style>
+    #search-input:focus {
+      border-color: var(--neon-hex) !important;
+    }
+  </style>
+</head>
+
+<body class="p-6 md:p-10 relative overflow-x-auto">
+
+  <!-- Background Video -->
+  <video id="bg-video" class="fixed inset-0 w-[100vw] h-[100vh] object-cover -z-10 hidden" autoplay loop muted
+    playsinline></video>
+
+  <!-- Background Blur Overlay -->
+  <div id="bg-blur-overlay" class="fixed inset-0 w-[100vw] h-[100vh] -z-[5] pointer-events-none" style="backdrop-filter: blur(0px);"></div>
+
+  <!-- Top Navigation -->
+  <div class="relative max-w-full max-w-7xl mx-auto mb-8 flex items-center group" id="nav-wrapper">
+    <button id="nav-scroll-left"
+      class="absolute left-0 z-10 p-1.5 bg-glass-bg !backdrop-blur-[var(--glass-blur)] border border-glass-border rounded-full shadow-lg text-slate-300 hover:text-white hidden transition-all duration-300 opacity-0 group-hover:opacity-100 focus:outline-none flex items-center justify-center">
+      <span class="material-symbols-outlined text-[20px]">chevron_left</span>
+    </button>
+
+    <nav
+      class="flex gap-4 flex-nowrap overflow-x-auto no-scrollbar scroll-smooth snap-x snap-mandatory py-2 px-10 mx-auto w-max max-w-full"
+      id="nav-container">
+      <!-- Categories will be injected here -->
+    </nav>
+
+    <button id="nav-scroll-right"
+      class="absolute right-0 z-10 p-1.5 bg-glass-bg !backdrop-blur-[var(--glass-blur)] border border-glass-border rounded-full shadow-lg text-slate-300 hover:text-white hidden transition-all duration-300 opacity-0 group-hover:opacity-100 focus:outline-none flex items-center justify-center">
+      <span class="material-symbols-outlined text-[20px]">chevron_right</span>
+    </button>
+  </div>
+
+  <!-- Search Bar -->
+  <div class="flex justify-center mb-10">
+    <div class="relative w-full max-w-2xl">
+      <input id="search-input"
+        class="w-full bg-slate-800/40 border-2 border-slate-700 rounded-full py-3 pl-6 pr-12 text-slate-200 placeholder-slate-400 focus:outline-none focus:border-neon-green focus:shadow-glow transition-all duration-300"
+        placeholder="Search bookmarks, notes, and more..." type="text" />
+      <span
+        class="material-symbols-outlined absolute right-4 top-1/2 transform -translate-y-1/2 text-slate-400">search</span>
+    </div>
+  </div>
+
+  <!-- Main Dashboard Grid -->
+  <main class="max-w-7xl mx-auto w-full flex-grow">
+    <div class="flex gap-6 w-full items-stretch" id="dashboard-grid">
+
+      <!-- Special widget: Weather (Static id to ensure positioning) -->
+      <div id="weather-widget-container" data-card-id="widget-weather" draggable="true"
+        class="break-inside-avoid bg-glass-bg !backdrop-blur-[var(--glass-blur)] border border-glass-border rounded-2xl transition-[transform,box-shadow,border-color,backdrop-filter] duration-200 ease-in hover:border-glass-border-hover hover:shadow-glass-hover p-5 hidden mb-3 group/card draggable-card cursor-grab active:cursor-grabbing">
+        <div class="flex justify-between items-center mb-4 pb-2 border-b border-card-divider">
+          <h2 class="text-sm font-semibold text-slate-300">Weather</h2>
+          <div class="text-right">
+            <div id="clock-time" class="text-lg font-bold text-white leading-none tracking-tight">--:--</div>
+            <div id="clock-date" class="text-[10px] uppercase tracking-wider text-slate-400 mt-1">---</div>
+          </div>
+        </div>
+        <div id="weather-content" class="text-center text-slate-400 text-sm">Loading weather...</div>
+      </div>
+
+      <!-- Special widget: Daily To-Do (Static id) -->
+      <div id="todo-widget-container" data-card-id="widget-todo" draggable="true"
+        class="break-inside-avoid bg-glass-bg !backdrop-blur-[var(--glass-blur)] border border-glass-border rounded-2xl transition-[transform,box-shadow,border-color,backdrop-filter] duration-200 ease-in hover:border-glass-border-hover hover:shadow-glass-hover p-5 !border-2 !border-neon-green !shadow-neon-glow bg-slate-800/60 hidden mb-3 group/card draggable-card cursor-grab active:cursor-grabbing">
+        <div class="flex justify-between items-center mb-6">
+          <h2 class="text-base font-semibold text-white">Daily To-Do</h2>
+          <button id="add-todo-btn" class="text-slate-400 hover:text-white" title="Add task"><span
+              class="material-symbols-outlined">add</span></button>
+        </div>
+        <div class="flex justify-center mb-6">
+          <div class="relative w-32 h-32 flex items-center justify-center">
+            <svg class="w-full h-full drop-shadow-[0_2px_4px_rgba(0,0,0,0.4)]" viewBox="0 0 100 100">
+              <circle class="text-slate-700 stroke-current" cx="50" cy="50" fill="transparent" r="40" stroke-width="8">
+              </circle>
+              <circle id="todo-progress-ring"
+                class="!text-neon-green stroke-current transition-[stroke-dashoffset] duration-[350ms] -rotate-90 origin-center"
+                cx="50" cy="50" fill="transparent" r="40" stroke-dasharray="251.2" stroke-dashoffset="251.2"
+                stroke-linecap="round" stroke-width="8"></circle>
+            </svg>
+            <div class="absolute flex flex-col items-center justify-center">
+              <span id="todo-progress-text"
+                class="text-2xl font-bold text-white drop-shadow-[0_2px_4px_rgba(0,0,0,0.6)]">0%</span>
+              <span class="text-xs text-slate-400 drop-shadow-[0_1px_2px_rgba(0,0,0,0.4)]">Done</span>
+            </div>
+          </div>
+        </div>
+        <ul id="todo-list" class="space-y-3">
+          <!-- Todos injected here -->
+        </ul>
+      </div>
+
+      <!-- Special widget: Calendar (Static id) -->
+      <div id="calendar-widget-container" data-card-id="widget-calendar" draggable="true"
+        class="break-inside-avoid bg-glass-bg !backdrop-blur-[var(--glass-blur)] border border-glass-border rounded-2xl transition-[transform,box-shadow,border-color,backdrop-filter] duration-200 ease-in hover:border-glass-border-hover hover:shadow-glass-hover p-5 hidden mb-3 group/card draggable-card cursor-grab active:cursor-grabbing">
+        <div class="flex justify-between items-center mb-4">
+          <button id="calendar-prev-month" class="text-slate-400 hover:text-white transition-colors" title="Previous Month"><span class="material-symbols-outlined text-sm">chevron_left</span></button>
+          <h2 id="calendar-month-year" class="text-sm font-semibold text-slate-200">Month Year</h2>
+          <button id="calendar-next-month" class="text-slate-400 hover:text-white transition-colors" title="Next Month"><span class="material-symbols-outlined text-sm">chevron_right</span></button>
+        </div>
+        <div class="grid gap-1 text-center text-xs mb-2" style="grid-template-columns: repeat(7, minmax(0, 1fr));">
+          <div class="text-slate-500">Su</div>
+          <div class="text-slate-500">Mo</div>
+          <div class="text-slate-500">Tu</div>
+          <div class="text-slate-500">We</div>
+          <div class="text-slate-500">Th</div>
+          <div class="text-slate-500">Fr</div>
+          <div class="text-slate-500">Sa</div>
+        </div>
+        <div id="calendar-grid" class="grid gap-1 text-center text-sm" style="grid-template-columns: repeat(7, minmax(0, 1fr));">
+          <!-- Calendar days injected here -->
+        </div>
+      </div>
+
+      <!-- Categories and Bookmarks will be injected here -->
+      <div id="bookmarks-container" class="contents"></div>
+
+      <!-- Add Card Buttons will be injected dynamically per column -->
+
+    </div>
+  </main>
+
+  <!-- Floating Settings Button -->
+  <div class="fixed bottom-6 right-6 z-50 flex flex-col items-end gap-3" id="right-tools-container">
+    <div id="floating-tools-wrapper" class="flex flex-col items-end gap-3 transition-all duration-300 ease-out origin-bottom max-h-[350px] opacity-100 scale-100 translate-y-0 pointer-events-auto">
+      <button id="incognito-btn"
+        class="bg-glass-bg !backdrop-blur-[var(--glass-blur)] border border-glass-border rounded-full w-20 h-20 shrink-0 flex items-center justify-center text-slate-300 hover:text-neon-green hover:border-neon-green transition-all duration-300 shadow-lg group">
+        <svg id="incognito-icon" class="w-9 h-9 transition-transform duration-300" fill="currentColor" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M17.06 13C15.2 13 13.64 14.33 13.24 16.1C12.29 15.69 11.42 15.8 10.76 16.09C10.35 14.31 8.79 13 6.94 13C4.77 13 3 14.79 3 17C3 19.21 4.77 21 6.94 21C9 21 10.68 19.38 10.84 17.32C11.18 17.08 12.07 16.63 13.16 17.34C13.34 19.39 15 21 17.06 21C19.23 21 21 19.21 21 17C21 14.79 19.23 13 17.06 13M6.94 19.86C5.38 19.86 4.13 18.58 4.13 17S5.39 14.14 6.94 14.14C8.5 14.14 9.75 15.42 9.75 17S8.5 19.86 6.94 19.86M17.06 19.86C15.5 19.86 14.25 18.58 14.25 17S15.5 14.14 17.06 14.14C18.62 14.14 19.88 15.42 19.88 17S18.61 19.86 17.06 19.86M22 10.5H2V12H22V10.5M15.53 2.63C15.31 2.14 14.75 1.88 14.22 2.05L12 2.79L9.77 2.05L9.72 2.04C9.19 1.89 8.63 2.17 8.43 2.68L6 9H18L15.56 2.68L15.53 2.63Z" /></svg>
+      </button>
+      <button id="privacy-btn"
+        class="bg-glass-bg !backdrop-blur-[var(--glass-blur)] border border-glass-border rounded-full w-20 h-20 shrink-0 flex items-center justify-center text-slate-300 hover:text-neon-green hover:border-neon-green transition-all duration-300 shadow-lg group">
+        <span class="material-symbols-outlined text-4xl transition-transform duration-300"
+          id="privacy-icon">visibility</span>
+      </button>
+      <button
+        class="bg-glass-bg !backdrop-blur-[var(--glass-blur)] border border-glass-border rounded-full w-20 h-20 shrink-0 flex items-center justify-center text-slate-300 hover:!text-neon-green hover:!border-neon-green transition-all duration-300 shadow-lg group"
+        id="settings-btn">
+        <span class="material-symbols-outlined text-4xl group-hover:rotate-90 transition-transform duration-500">settings</span>
+      </button>
+    </div>
+    <button id="group-tools-toggle"
+      class="bg-glass-bg !backdrop-blur-[var(--glass-blur)] border border-glass-border rounded-full w-20 h-20 shrink-0 flex items-center justify-center text-slate-300 hover:!text-neon-green hover:!border-neon-green transition-all duration-300 shadow-lg hidden group">
+      <span id="group-tools-icon" class="material-symbols-outlined text-4xl transition-transform duration-300">menu</span>
+    </button>
+  </div>
+
+  <!-- Settings Modal Overlay -->
+  <div
+    class="fixed inset-0 bg-black/60 backdrop-blur-sm z-[60] flex items-center justify-center opacity-0 pointer-events-none transition-opacity duration-300"
+    id="settings-sidebar">
+    <!-- Modal Container -->
+    <div
+      class="bg-glass-bg !backdrop-blur-[var(--glass-blur)] w-[800px] max-w-[95vw] h-[650px] max-h-[90vh] rounded-xl shadow-2xl flex overflow-hidden border border-glass-border transform scale-95 transition-transform duration-300"
+      id="settings-modal-content">
+
+      <!-- Left Sidebar -->
+      <div class="w-1/3 max-w-[240px] bg-slate-950/30 border-r border-glass-border flex flex-col p-4">
+        <h2 class="text-white text-lg font-bold mb-6 px-2 mt-2">Settings</h2>
+        <button id="tab-btn-general"
+          class="flex items-center gap-3 bg-neon-green/10 text-neon-green px-4 py-3 rounded-lg font-medium transition-colors border border-neon-green/20">
+          <span class="material-symbols-outlined text-[20px]">settings</span>
+          General
+        </button>
+        <button id="tab-btn-wallpapers"
+          class="flex items-center gap-3 text-slate-400 hover:text-white hover:bg-slate-800/50 px-4 py-3 rounded-lg font-medium transition-colors border border-transparent mt-2">
+          <span class="material-symbols-outlined text-[20px]">wallpaper</span>
+          Wallpapers
+        </button>
+        <button id="tab-btn-widgets"
+          class="flex items-center gap-3 text-slate-400 hover:text-white hover:bg-slate-800/50 px-4 py-3 rounded-lg font-medium transition-colors border border-transparent mt-2">
+          <span class="material-symbols-outlined text-[20px]">widgets</span>
+          Widgets
+        </button>
+      </div>
+
+      <!-- Right Content Area -->
+      <div class="flex-1 flex flex-col bg-transparent relative">
+        <!-- Header -->
+        <div class="flex justify-between items-center p-6 border-b border-glass-border shrink-0">
+          <h2 class="text-white text-xl font-bold" id="settings-header-title">General Settings</h2>
+          <button
+            class="text-slate-400 hover:text-white transition-colors bg-slate-800/50 hover:bg-slate-700 rounded-full p-1.5 flex items-center justify-center"
+            id="close-sidebar">
+            <span class="material-symbols-outlined text-[20px]">close</span>
+          </button>
+        </div>
+
+        <!-- Scrollable Settings -->
+        <div class="p-6 overflow-y-auto flex-grow custom-scrollbar">
+
+          <!-- GENERAL TAB -->
+          <div id="settings-tab-general" class="space-y-8">
+
+            <!-- APPEARANCE -->
+            <div>
+              <h3 class="text-xs font-bold text-slate-500 mb-3 tracking-wider uppercase">Appearance</h3>
+              <div class="space-y-0 bg-slate-800 border border-slate-800 rounded-xl overflow-hidden">
+                <!-- Compact mode -->
+                <div
+                  class="flex justify-between items-center p-4 hover:bg-white/[0.02] transition-colors border-b border-slate-800">
+                  <div>
+                    <div class="text-slate-200 text-sm font-medium">Compact mode</div>
+                    <div class="text-slate-500 text-xs mt-0.5">Reduce spacing to show more bookmarks.</div>
+                  </div>
+                  <label class="relative inline-block w-[44px] h-[24px] shrink-0">
+                    <input type="checkbox" class="opacity-0 w-0 h-0 peer" id="toggle-compact-mode">
+                    <span
+                      class="absolute cursor-pointer inset-0 bg-slate-700 border border-slate-500 peer-checked:border-neon-green transition-all duration-300 rounded-full before:absolute before:content-[''] before:h-[18px] before:w-[18px] before:left-[2px] before:bottom-[2px] before:bg-white before:transition-all before:duration-300 before:rounded-full before:shadow-[0_2px_4px_rgba(0,0,0,0.2)] peer-checked:bg-neon-green peer-focus:shadow-[0_0_1px_var(--neon-hex)] peer-checked:before:translate-x-[20px]"></span>
+                  </label>
+                </div>
+                <!-- Group right-side tools -->
+                <div class="flex justify-between items-center p-4  transition-colors border-b border-slate-800">
+                  <div>
+                    <div class="text-slate-200 text-sm font-medium">Group right-side tools</div>
+                    <div class="text-slate-500 text-xs mt-0.5">Group the right-side floating buttons (Incognito, Privacy, Settings) into a single collapsible menu button.</div>
+                  </div>
+                  <label class="relative inline-block w-[44px] h-[24px] shrink-0">
+                    <input type="checkbox" class="opacity-0 w-0 h-0 peer" id="toggle-group-tools">
+                    <span
+                      class="absolute cursor-pointer inset-0 bg-slate-700 border border-slate-500 peer-checked:border-neon-green transition-all duration-300 rounded-full before:absolute before:content-[''] before:h-[18px] before:w-[18px] before:left-[2px] before:bottom-[2px] before:bg-white before:transition-all before:duration-300 before:rounded-full before:shadow-[0_2px_4px_rgba(0,0,0,0.2)] peer-checked:bg-neon-green peer-focus:shadow-[0_0_1px_var(--neon-hex)] peer-checked:before:translate-x-[20px]"></span>
+                  </label>
+                </div>
+                <!-- Hide extra bookmarks -->
+                <div
+                  class="flex justify-between items-center p-4 hover:bg-white/[0.02] transition-colors border-b border-slate-800">
+                  <div>
+                    <div class="text-slate-200 text-sm font-medium">Hide extra bookmarks in long boards</div>
+                    <div class="text-slate-500 text-xs mt-0.5">Automatically hide extra bookmarks in long boards.</div>
+                  </div>
+                  <label class="relative inline-block w-[44px] h-[24px] shrink-0">
+                    <input type="checkbox" class="opacity-0 w-0 h-0 peer" id="toggle-hide-extra">
+                    <span
+                      class="absolute cursor-pointer inset-0 bg-slate-700 border border-slate-500 peer-checked:border-neon-green transition-all duration-300 rounded-full before:absolute before:content-[''] before:h-[18px] before:w-[18px] before:left-[2px] before:bottom-[2px] before:bg-white before:transition-all before:duration-300 before:rounded-full before:shadow-[0_2px_4px_rgba(0,0,0,0.2)] peer-checked:bg-neon-green peer-focus:shadow-[0_0_1px_var(--neon-hex)] peer-checked:before:translate-x-[20px]"></span>
+                  </label>
+                </div>
+                <!-- Privacy Mode Behavior -->
+                <div class="flex justify-between items-center p-4 hover:bg-white/[0.02] transition-colors border-b border-slate-800">
+                  <div>
+                    <div class="text-slate-200 text-sm font-medium">Hide everything on Privacy Mode</div>
+                    <div class="text-slate-500 text-xs mt-0.5">Completely hide cards and widgets instead of blurring them.</div>
+                  </div>
+                  <label class="relative inline-block w-[44px] h-[24px] shrink-0">
+                    <input type="checkbox" class="opacity-0 w-0 h-0 peer" id="toggle-privacy-hide">
+                    <span class="absolute cursor-pointer inset-0 bg-slate-700 border border-slate-500 peer-checked:border-neon-green transition-all duration-300 rounded-full before:absolute before:content-[''] before:h-[18px] before:w-[18px] before:left-[2px] before:bottom-[2px] before:bg-white before:transition-all before:duration-300 before:rounded-full before:shadow-[0_2px_4px_rgba(0,0,0,0.2)] peer-checked:bg-neon-green peer-focus:shadow-[0_0_1px_var(--neon-hex)] peer-checked:before:translate-x-[20px]"></span>
+                  </label>
+                </div>
+                <!-- Shorten long titles -->
+                <div class="flex justify-between items-center p-4 hover:bg-white/[0.02] transition-colors">
+                  <div>
+                    <div class="text-slate-200 text-sm font-medium">Shorten long titles</div>
+                    <div class="text-slate-500 text-xs mt-0.5">Show titles on one line with "...".</div>
+                  </div>
+                  <label class="relative inline-block w-[44px] h-[24px] shrink-0">
+                    <input type="checkbox" class="opacity-0 w-0 h-0 peer" id="toggle-shorten-titles">
+                    <span
+                      class="absolute cursor-pointer inset-0 bg-slate-700 border border-slate-500 peer-checked:border-neon-green transition-all duration-300 rounded-full before:absolute before:content-[''] before:h-[18px] before:w-[18px] before:left-[2px] before:bottom-[2px] before:bg-white before:transition-all before:duration-300 before:rounded-full before:shadow-[0_2px_4px_rgba(0,0,0,0.2)] peer-checked:bg-neon-green peer-focus:shadow-[0_0_1px_var(--neon-hex)] peer-checked:before:translate-x-[20px]"></span>
+                  </label>
+                </div>
+              </div>
+            </div>
+
+            <!-- BEHAVIOR -->
+            <div>
+              <h3 class="text-xs font-bold text-slate-500 mb-3 tracking-wider uppercase">Behavior</h3>
+              <div class="space-y-0 bg-slate-800 border border-slate-800 rounded-xl overflow-hidden">
+                <!-- Open links in new tab -->
+                <div
+                  class="flex justify-between items-center p-4 hover:bg-white/[0.02] transition-colors border-b border-slate-800">
+                  <div>
+                    <div class="text-slate-200 text-sm font-medium">Open links in new tab</div>
+                    <div class="text-slate-500 text-xs mt-0.5">Open bookmarks in a new browser tab.</div>
+                  </div>
+                  <label class="relative inline-block w-[44px] h-[24px] shrink-0">
+                    <input type="checkbox" class="opacity-0 w-0 h-0 peer" id="toggle-open-new-tab">
+                    <span
+                      class="absolute cursor-pointer inset-0 bg-slate-700 border border-slate-500 peer-checked:border-neon-green transition-all duration-300 rounded-full before:absolute before:content-[''] before:h-[18px] before:w-[18px] before:left-[2px] before:bottom-[2px] before:bg-white before:transition-all before:duration-300 before:rounded-full before:shadow-[0_2px_4px_rgba(0,0,0,0.2)] peer-checked:bg-neon-green peer-focus:shadow-[0_0_1px_var(--neon-hex)] peer-checked:before:translate-x-[20px]"></span>
+                  </label>
+                </div>
+                <!-- Show bookmark descriptions -->
+                <div
+                  class="flex justify-between items-center p-4 hover:bg-white/[0.02] transition-colors border-b border-slate-800">
+                  <div>
+                    <div class="text-slate-200 text-sm font-medium">Show bookmark descriptions</div>
+                    <div class="text-slate-500 text-xs mt-0.5">Display saved descriptions below bookmark titles.</div>
+                  </div>
+                  <label class="relative inline-block w-[44px] h-[24px] shrink-0">
+                    <input type="checkbox" class="opacity-0 w-0 h-0 peer" id="toggle-show-descriptions">
+                    <span
+                      class="absolute cursor-pointer inset-0 bg-slate-700 border border-slate-500 peer-checked:border-neon-green transition-all duration-300 rounded-full before:absolute before:content-[''] before:h-[18px] before:w-[18px] before:left-[2px] before:bottom-[2px] before:bg-white before:transition-all before:duration-300 before:rounded-full before:shadow-[0_2px_4px_rgba(0,0,0,0.2)] peer-checked:bg-neon-green peer-focus:shadow-[0_0_1px_var(--neon-hex)] peer-checked:before:translate-x-[20px]"></span>
+                  </label>
+                </div>
+                <!-- Quick Save destination -->
+                <div
+                  class="flex justify-between items-center p-4 hover:bg-white/[0.02] transition-colors border-b border-slate-800">
+                  <div>
+                    <div class="text-slate-200 text-sm font-medium">Quick Save destination</div>
+                    <div class="text-slate-500 text-xs mt-0.5">Where to save new links.</div>
+                  </div>
+                  <select id="select-quick-save-dest"
+                    class="bg-slate-800 border border-slate-700 text-slate-200 text-sm rounded-lg px-3 py-1.5 focus:outline-none focus:border-neon-green cursor-pointer">
+                  </select>
+                </div>
+                <!-- Change quick save shortcut -->
+                <div class="flex justify-between items-center p-4 hover:bg-white/[0.02] transition-colors">
+                  <div>
+                    <div class="text-slate-200 text-sm font-medium">Change quick save shortcut</div>
+                    <div class="text-slate-500 text-xs mt-0.5" id="quick-save-shortcut-desc">No shortcut assigned. Click
+                      Change to set one.</div>
+                  </div>
+                  <div class="flex items-center gap-3">
+                    <span id="quick-save-shortcut-display"
+                      class="text-slate-400 text-sm font-mono bg-slate-800/50 px-2 py-1 rounded border border-slate-700/50">Not
+                      set</span>
+                    <button id="btn-change-shortcut"
+                      class="bg-slate-800 hover:bg-slate-700 text-white text-sm font-medium px-4 py-1.5 rounded-lg transition-colors border border-slate-700">Change</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- DATA MANAGEMENT -->
+            <div class="mt-8 pb-8">
+              <h3 class="text-xs font-bold text-slate-500 mb-3 tracking-wider uppercase">Data Management</h3>
+              <div class="space-y-0 bg-slate-800 border border-slate-800 rounded-xl overflow-hidden">
+                <!-- Import browser bookmarks -->
+                <div class="flex justify-between items-center p-4 hover:bg-white/[0.02] transition-colors border-b border-slate-800">
+                  <div>
+                    <div class="text-slate-200 text-sm font-medium">Import Browser Bookmarks</div>
+                    <div class="text-slate-500 text-xs mt-0.5">Import bookmarks from your browser into LinkHive.</div>
+                  </div>
+                  <button id="btn-import-bookmarks" class="bg-neon-green/20 hover:bg-neon-green/30 text-neon-green text-sm font-medium px-4 py-1.5 rounded-lg transition-colors border border-neon-green/30">Import</button>
+                </div>
+              </div>
+            </div>
+
+
+
+            <!-- CUSTOMIZATION (OLD SETTINGS) -->
+            <div>
+              <h3 class="text-xs font-bold text-slate-500 mb-3 tracking-wider uppercase">Customization</h3>
+              <div class="space-y-6 bg-slate-800 border border-slate-800 rounded-xl overflow-hidden p-4">
+                <div>
+                  <label class="block text-sm text-slate-200 font-medium mb-3">Glass Blur Intensity</label>
+                  <input class="w-full h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-neon-green"
+                    id="blur-slider" max="30" min="0" type="range" value="12" />
+                </div>
+                <div>
+                  <label class="block text-sm text-slate-200 font-medium mb-3">Wallpaper Blur Intensity</label>
+                  <input class="w-full h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-neon-green"
+                    id="bg-blur-slider" max="30" min="0" type="range" value="0" />
+                </div>
+                <div>
+                  <label class="block text-sm text-slate-200 font-medium mb-3">Neon Accent Color</label>
+                  <div class="flex items-center gap-4">
+                    <input class="w-10 h-10 rounded cursor-pointer bg-slate-900 border border-slate-800 p-1"
+                      id="color-picker" type="color" value="#22c55e" />
+                    <span
+                      class="text-sm text-slate-400 font-mono bg-slate-900 px-3 py-1.5 rounded-lg border border-slate-800"
+                      id="color-hex">#22c55e</span>
+                  </div>
+                </div>
+
+              </div>
+            </div>
+
+            <!-- DATA MANAGEMENT (OLD SETTINGS) -->
+            <!-- <div>
+              <h3 class="text-xs font-bold text-slate-500 mb-3 tracking-wider uppercase">Data</h3>
+              <div class="bg-slate-800 border border-slate-800 rounded-xl overflow-hidden p-4">
+                <div class="flex gap-3 mb-2">
+                  <button id="export-data"
+                    class="flex-1 bg-slate-800 hover:bg-slate-700 text-slate-300 py-2.5 rounded-lg text-sm transition-colors border border-slate-700 font-medium">Export
+                    JSON</button>
+                  <button id="import-data-btn"
+                    class="flex-1 bg-slate-800 hover:bg-slate-700 text-slate-300 py-2.5 rounded-lg text-sm transition-colors border border-slate-700 font-medium">Import
+                    JSON</button>
+                  <input type="file" id="import-file" class="hidden" accept=".json">
+                </div>
+                <div class="text-xs text-slate-500 text-center mt-3">Data syncs via LinkHive sync automatically.</div>
+              </div>
+            </div> End Data Management -->
+
+          </div> <!-- End #settings-tab-general -->
+
+          <!-- WALLPAPERS TAB -->
+          <div id="settings-tab-wallpapers" class="space-y-8 hidden">
+            <div>
+              <h3 class="text-xs font-bold text-slate-500 mb-3 tracking-wider uppercase">Wallpaper Selection</h3>
+              <div class="bg-slate-800 border border-slate-800 rounded-xl overflow-hidden p-4">
+                <div class="grid grid-cols-2 gap-3 mb-4" id="wallpaper-grid">
+                  <!-- Wallpapers populated by JS -->
+                </div>
+                <div class="flex items-center gap-2 pt-4 border-t border-slate-800">
+                  <input type="file" id="upload-wallpaper" class="hidden" accept="image/*,video/*">
+                  <button id="upload-wallpaper-btn"
+                    class="w-full bg-slate-800 hover:bg-slate-700 text-slate-300 py-2.5 rounded-lg text-sm transition-colors flex items-center justify-center gap-2 border border-slate-700">
+                    <span class="material-symbols-outlined text-[18px]">upload</span> Upload Local Image or Video
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div> <!-- End #settings-tab-wallpapers -->
+
+          <!-- WIDGETS TAB -->
+          <div id="settings-tab-widgets" class="space-y-6 hidden">
+            <div>
+              <h3 class="text-xs font-bold text-slate-500 mb-4 tracking-wider uppercase">Available Widgets</h3>
+              <div class="space-y-4" id="widgets-panels-container">
+
+                <!-- Weather Widget Panel -->
+                <div class="bg-slate-800 border border-slate-700/60 rounded-xl p-5 shadow-sm transition-all hover:border-slate-600 widget-panel" data-widget="weather">
+                  <div class="flex items-center justify-between">
+                    <div>
+                      <div class="text-sm font-semibold text-slate-200 flex items-center gap-2">
+                        <span class="material-symbols-outlined text-neon-green text-lg">partly_cloudy_day</span> Weather Widget
+                      </div>
+                      <div class="text-xs text-slate-400 mt-0.5">Displays real-time weather conditions for your city on the dashboard.</div>
+                    </div>
+                    <label class="relative inline-block w-[44px] h-[24px] shrink-0">
+                      <input type="checkbox" class="opacity-0 w-0 h-0 peer" id="toggle-weather" checked>
+                      <span
+                        class="absolute cursor-pointer inset-0 bg-slate-700 border border-slate-500 peer-checked:border-neon-green transition-all duration-300 rounded-full before:absolute before:content-[''] before:h-[18px] before:w-[18px] before:left-[2px] before:bottom-[2px] before:bg-white before:transition-all before:duration-300 before:rounded-full before:shadow-[0_2px_4px_rgba(0,0,0,0.2)] peer-checked:bg-neon-green peer-focus:shadow-[0_0_1px_var(--neon-hex)] peer-checked:before:translate-x-[20px]"></span>
+                    </label>
+                  </div>
+                  <div class="pt-4 mt-4 border-t border-slate-700/50">
+                    <label class="block text-xs font-medium text-slate-400 mb-2">City for Weather (e.g. London, New York)</label>
+                    <div class="flex gap-2">
+                      <input type="text" id="weather-city"
+                        class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-neon-green transition-colors"
+                        placeholder="City name">
+                      <button id="save-city"
+                        class="bg-slate-700 hover:bg-slate-600 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors border border-slate-600 shrink-0">Save</button>
+                    </div>
+                    <div id="weather-msg" class="text-xs text-neon-green mt-1.5 font-medium hidden">Saved successfully!</div>
+                  </div>
+                </div>
+
+                <!-- Daily To-Do Widget Panel -->
+                <div class="bg-slate-800 border border-slate-700/60 rounded-xl p-5 shadow-sm transition-all hover:border-slate-600 widget-panel" data-widget="todo">
+                  <div class="flex items-center justify-between">
+                    <div>
+                      <div class="text-sm font-semibold text-slate-200 flex items-center gap-2">
+                        <span class="material-symbols-outlined text-neon-green text-lg">check_circle</span> Daily To-Do Widget
+                      </div>
+                      <div class="text-xs text-slate-400 mt-0.5">Manage daily tasks and checklists right from your home screen.</div>
+                    </div>
+                    <label class="relative inline-block w-[44px] h-[24px] shrink-0">
+                      <input type="checkbox" class="opacity-0 w-0 h-0 peer" id="toggle-todo" checked>
+                      <span
+                        class="absolute cursor-pointer inset-0 bg-slate-700 border border-slate-500 peer-checked:border-neon-green transition-all duration-300 rounded-full before:absolute before:content-[''] before:h-[18px] before:w-[18px] before:left-[2px] before:bottom-[2px] before:bg-white before:transition-all before:duration-300 before:rounded-full before:shadow-[0_2px_4px_rgba(0,0,0,0.2)] peer-checked:bg-neon-green peer-focus:shadow-[0_0_1px_var(--neon-hex)] peer-checked:before:translate-x-[20px]"></span>
+                    </label>
+                  </div>
+                </div>
+
+                <!-- Calendar Widget Panel -->
+                <div class="bg-slate-800 border border-slate-700/60 rounded-xl p-5 shadow-sm transition-all hover:border-slate-600 widget-panel" data-widget="calendar">
+                  <div class="flex items-center justify-between">
+                    <div>
+                      <div class="text-sm font-semibold text-slate-200 flex items-center gap-2">
+                        <span class="material-symbols-outlined text-neon-green text-lg">calendar_month</span> Mini Calendar Widget
+                      </div>
+                      <div class="text-xs text-slate-400 mt-0.5">A clean, interactive monthly calendar right on your dashboard.</div>
+                    </div>
+                    <label class="relative inline-block w-[44px] h-[24px] shrink-0">
+                      <input type="checkbox" class="opacity-0 w-0 h-0 peer" id="toggle-calendar" checked>
+                      <span
+                        class="absolute cursor-pointer inset-0 bg-slate-700 border border-slate-500 peer-checked:border-neon-green transition-all duration-300 rounded-full before:absolute before:content-[''] before:h-[18px] before:w-[18px] before:left-[2px] before:bottom-[2px] before:bg-white before:transition-all before:duration-300 before:rounded-full before:shadow-[0_2px_4px_rgba(0,0,0,0.2)] peer-checked:bg-neon-green peer-focus:shadow-[0_0_1px_var(--neon-hex)] peer-checked:before:translate-x-[20px]"></span>
+                    </label>
+                  </div>
+                </div>
+
+                <!-- Notepad Widgets Panel -->
+                <div class="bg-slate-800 border border-slate-700/60 rounded-xl p-5 shadow-sm transition-all hover:border-slate-600 widget-panel" data-widget="notepads">
+                  <div class="flex items-center justify-between">
+                    <div>
+                      <div class="text-sm font-semibold text-slate-200 flex items-center gap-2">
+                        <span class="material-symbols-outlined text-neon-green text-lg">description</span> Notepad Widgets
+                      </div>
+                      <div class="text-xs text-slate-400 mt-0.5">Create and manage multiple quick notes and scratchpads.</div>
+                    </div>
+                    <button id="add-notepad-btn"
+                      class="text-neon-green hover:text-green-400 text-xs font-semibold bg-neon-green/10 hover:bg-neon-green/20 px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1 border border-neon-green/30 shrink-0">
+                      <span class="material-symbols-outlined text-[16px]">add</span> Add Notepad
+                    </button>
+                  </div>
+                  <div class="pt-4 mt-4 border-t border-slate-700/50">
+                    <div id="notepad-settings-list" class="space-y-2.5">
+                      <!-- Dynamic notepad settings injected here -->
+                    </div>
+                  </div>
+                </div>
+
+              </div>
+            </div>
+          </div> <!-- End #settings-tab-widgets -->
+
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Import Bookmarks Modal Overlay -->
+  <div class="fixed inset-0 z-50 flex items-center justify-center backdrop-blur-sm p-4 custom-modal-overlay transition-all opacity-0 pointer-events-none" id="import-bookmarks-modal">
+    <!-- Modal Container -->
+    <div class="w-full rounded-2xl shadow-2xl flex flex-col overflow-hidden custom-modal-content transform scale-95 transition-transform duration-300" style="max-width: 448px;" id="import-bookmarks-content">
+      <div class="p-6 flex flex-col" style="gap: 20px;">
+        <div class="flex justify-between items-center">
+          <h3 class="text-xl font-bold custom-modal-title">Import Bookmarks</h3>
+          <button class="text-slate-400 hover:text-white transition-colors bg-slate-800/50 hover:bg-slate-700 rounded-full p-1.5 flex items-center justify-center" id="close-import-modal">
+            <span class="material-symbols-outlined text-[18px]">close</span>
+          </button>
+        </div>
+        
+        <p class="text-sm text-slate-400">Select the browser folder you want to import. A new card will be created in your chosen tab.</p>
+        
+        <!-- Custom Folder Dropdown -->
+        <div class="flex flex-col" style="gap: 8px;">
+          <label class="text-sm font-semibold custom-modal-label">Select Folder</label>
+          <div class="relative" id="import-folder-dropdown">
+            <button type="button" id="import-folder-trigger"
+              class="w-full flex items-center justify-between px-4 py-3 rounded-xl text-sm text-slate-200 border border-slate-700 bg-slate-800/80 hover:border-slate-500 hover:bg-slate-800 transition-all cursor-pointer">
+              <span id="import-folder-label" class="truncate text-slate-400">Loading folders...</span>
+              <span class="material-symbols-outlined text-slate-400 text-[20px] shrink-0 transition-transform duration-200" id="import-folder-chevron">expand_more</span>
+            </button>
+            <div id="import-folder-menu"
+              class="absolute z-10 w-full mt-1.5 rounded-xl border border-slate-700 bg-slate-900 shadow-2xl overflow-hidden hidden">
+              <div class="max-h-48 overflow-y-auto custom-scrollbar" id="import-folder-options">
+                <!-- Populated dynamically -->
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Custom Tab Dropdown -->
+        <div class="flex flex-col" style="gap: 8px;">
+          <label class="text-sm font-semibold custom-modal-label">Destination Tab</label>
+          <div class="relative" id="import-tab-dropdown">
+            <button type="button" id="import-tab-trigger"
+              class="w-full flex items-center justify-between px-4 py-3 rounded-xl text-sm text-slate-200 border border-slate-700 bg-slate-800/80 hover:border-slate-500 hover:bg-slate-800 transition-all cursor-pointer">
+              <span id="import-tab-label" class="truncate">Select tab...</span>
+              <span class="material-symbols-outlined text-slate-400 text-[20px] shrink-0 transition-transform duration-200" id="import-tab-chevron">expand_more</span>
+            </button>
+            <div id="import-tab-menu"
+              class="absolute z-10 w-full mt-1.5 rounded-xl border border-slate-700 bg-slate-900 shadow-2xl overflow-hidden hidden">
+              <div class="max-h-48 overflow-y-auto custom-scrollbar" id="import-tab-options">
+                <!-- Populated dynamically -->
+              </div>
+            </div>
+          </div>
+        </div>
+        
+        <div class="flex items-center justify-end" style="gap: 12px; margin-top: 4px;">
+          <button id="btn-cancel-import" class="px-5 py-2 rounded-lg text-sm font-semibold transition-colors custom-modal-cancel">Cancel</button>
+          <button id="btn-confirm-import" class="px-5 py-2 rounded-lg text-sm font-bold transition-colors shadow-md custom-modal-save flex items-center gap-2">
+            <span class="material-symbols-outlined text-[18px]">download</span>
+            Import Folder
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="script.js"></script>
+</body>
+
+</html>

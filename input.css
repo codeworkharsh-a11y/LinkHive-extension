@@ -1,0 +1,273 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Custom Base */
+:root {
+  --glass-blur-val: 12;
+  --glass-blur: calc(var(--glass-blur-val) * 1px);
+  --neon-hex: #22c55e;
+  --neon-rgb: 34 197 94;
+  --bg-wallpaper: #0b1121;
+  
+  /* Default (Dark Mode) Variables */
+  --tx-white-rgb: 255 255 255;
+  --tx-200-rgb: 226 232 240;
+  --tx-300-rgb: 203 213 225;
+  --tx-400-rgb: 148 163 184;
+  --tx-500-rgb: 100 116 139;
+  --tx-700-rgb: 51 65 85;
+  --tx-800-rgb: 30 41 59;
+  --tx-900-rgb: 18 18 18; /* #121212 for modal */
+  --tx-950-rgb: 10 10 10; /* #0a0a0a for sidebar */
+  --glass-rgb: 30 41 59;
+  --glass-border: rgba(255, 255, 255, 0.05);
+  --glass-border-hover: rgba(255, 255, 255, 0.1);
+  --card-divider: rgba(255, 255, 255, 0.18);
+  --glass-opacity: calc(0.1 + (var(--glass-blur-val) / 30) * 0.5);
+}
+
+body.theme-light {
+  --tx-white-rgb: 15 23 42;
+  --tx-200-rgb: 30 41 59;
+  --tx-300-rgb: 51 65 85;
+  --tx-400-rgb: 71 85 105;
+  --tx-500-rgb: 100 116 139;
+  --tx-700-rgb: 203 213 225;
+  --tx-800-rgb: 248 250 252;
+  --tx-900-rgb: 255 255 255; /* white for modal */
+  --tx-950-rgb: 241 245 249; /* slate-100 for sidebar */
+  --glass-rgb: 255 255 255;
+  --glass-border: rgba(0, 0, 0, 0.15);
+  --glass-border-hover: rgba(0, 0, 0, 0.3);
+  --card-divider: rgba(0, 0, 0, 0.18);
+  --glass-opacity: calc(0.4 + (var(--glass-blur-val) / 30) * 0.45); /* Opaque enough to cover bright backgrounds, adjusts with slider */
+}
+
+body {
+  font-family: 'Inter', sans-serif;
+  background-color: #0b1121;
+  background-image: var(--bg-wallpaper);
+  background-size: cover;
+  background-attachment: fixed;
+  background-position: center;
+  color: rgb(var(--tx-200-rgb));
+  min-height: 100vh;
+  transition: color 0.3s ease;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Custom Utilities */
+/* Force content to render toggle thumb */
+input[type="checkbox"].peer + span::before {
+  content: "";
+}
+
+/* Hide scrollbar for grid */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+/* Custom Scrollbar for Settings */
+.custom-scrollbar::-webkit-scrollbar {
+  width: 8px;
+}
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 4px;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.3);
+}
+
+body.privacy-mode #dashboard-grid > div > div {
+  filter: blur(14px) opacity(0.8);
+  pointer-events: none;
+  user-select: none;
+}
+body.privacy-mode #dashboard-grid > div > div {
+  transition: filter 0.3s ease, opacity 0.3s ease, visibility 0s linear 0s;
+}
+
+body.privacy-hide #dashboard-grid > div > div {
+  opacity: 0 !important;
+  visibility: hidden !important;
+  pointer-events: none !important;
+  filter: none !important;
+  transition: filter 0.3s ease, opacity 0.3s ease, visibility 0s linear 0.3s !important;
+}
+
+/* Card & Notepad Header Divider */
+.border-card-divider {
+  border-color: var(--card-divider) !important;
+}
+
+/* Custom Modal System */
+.custom-modal-overlay {
+  background-color: rgba(0, 0, 0, 0.65);
+  backdrop-filter: blur(8px);
+}
+
+.custom-modal-content {
+  background-color: #0f172a !important;
+  border: 1px solid var(--glass-border-hover);
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.8), 0 0 30px rgba(var(--neon-rgb), 0.15);
+  color: rgb(var(--tx-200-rgb));
+}
+body.theme-light .custom-modal-content {
+  background-color: #ffffff !important;
+  border: 1px solid rgba(0, 0, 0, 0.15);
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+  color: rgb(var(--tx-white-rgb));
+}
+
+.custom-modal-title {
+  color: rgb(var(--tx-white-rgb));
+}
+
+.custom-modal-label {
+  color: rgb(var(--tx-300-rgb));
+}
+
+/* Normal glass border by default, neon accent border ONLY when clicked/focused */
+input[type="text"],
+input[type="search"],
+input[type="url"],
+input[type="password"],
+textarea,
+.neon-focus-ring {
+  border-color: var(--glass-border) !important;
+  outline: none !important;
+}
+body.theme-light input[type="text"],
+body.theme-light input[type="search"],
+body.theme-light input[type="url"],
+body.theme-light input[type="password"],
+body.theme-light textarea,
+body.theme-light .neon-focus-ring {
+  border-color: rgba(0, 0, 0, 0.15) !important;
+}
+
+input[type="text"]:focus,
+input[type="search"]:focus,
+input[type="url"]:focus,
+input[type="password"]:focus,
+textarea:focus,
+.neon-focus-ring:focus,
+.custom-modal-input:focus {
+  border-color: var(--neon-hex, #22c55e) !important;
+  outline: none !important;
+  box-shadow: 0 0 12px rgba(var(--neon-rgb), 0.35) !important;
+}
+
+.custom-modal-input {
+  background-color: rgba(255, 255, 255, 0.06) !important;
+  border: 1px solid var(--glass-border) !important;
+  color: rgb(var(--tx-200-rgb)) !important;
+  outline: none !important;
+}
+.custom-modal-input:focus {
+  background-color: rgba(255, 255, 255, 0.1) !important;
+  border-color: var(--neon-hex, #22c55e) !important;
+}
+body.theme-light .custom-modal-input {
+  background-color: rgba(0, 0, 0, 0.04) !important;
+  border: 1px solid rgba(0, 0, 0, 0.15) !important;
+  color: rgb(var(--tx-white-rgb)) !important;
+}
+body.theme-light .custom-modal-input:focus {
+  background-color: rgba(0, 0, 0, 0.06) !important;
+  border-color: var(--neon-hex, #22c55e) !important;
+}
+
+.custom-modal-cancel {
+  background-color: rgba(255, 255, 255, 0.08);
+  color: rgb(var(--tx-300-rgb));
+  border: 1px solid transparent;
+}
+.custom-modal-cancel:hover {
+  background-color: rgba(255, 255, 255, 0.15);
+  color: rgb(var(--tx-white-rgb));
+}
+body.theme-light .custom-modal-cancel {
+  background-color: rgba(0, 0, 0, 0.06);
+  color: rgb(var(--tx-400-rgb));
+}
+body.theme-light .custom-modal-cancel:hover {
+  background-color: rgba(0, 0, 0, 0.12);
+  color: rgb(var(--tx-white-rgb));
+}
+
+.custom-modal-save {
+  background-color: var(--neon-hex, #22c55e) !important;
+  color: #052e16 !important;
+  font-weight: 700 !important;
+  border: 1px solid var(--neon-hex, #22c55e) !important;
+  box-shadow: 0 0 15px rgba(var(--neon-rgb), 0.4) !important;
+}
+.custom-modal-save:hover {
+  filter: brightness(1.1);
+  box-shadow: 0 0 20px rgba(var(--neon-rgb), 0.6) !important;
+}
+.custom-modal-save:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  box-shadow: none !important;
+}
+
+/* Favicon Differentiated Background & Aesthetic Container */
+.favicon-wrapper {
+  background: linear-gradient(135deg, hsl(var(--domain-hue), 45%, 16%), hsl(var(--domain-hue), 50%, 11%));
+  border: 1px solid transparent !important;
+  box-shadow: 0 2px 6px -1px hsla(var(--domain-hue), 60%, 5%, 0.5);
+}
+
+.favicon-inner-glow {
+  background: radial-gradient(circle at center, hsla(var(--domain-hue), 85%, 65%, 0.22) 0%, transparent 75%);
+}
+
+.favicon-wrapper:hover, .group:hover .favicon-wrapper {
+  border-color: hsl(var(--domain-hue), 80%, 55%) !important;
+  box-shadow: 0 0 12px hsla(var(--domain-hue), 80%, 55%, 0.35);
+}
+
+/* Light theme adjustments */
+body.theme-light .favicon-wrapper {
+  background: linear-gradient(135deg, hsl(var(--domain-hue), 65%, 94%), hsl(var(--domain-hue), 55%, 88%));
+  border: 1px solid transparent !important;
+  box-shadow: 0 2px 6px -1px hsla(var(--domain-hue), 40%, 40%, 0.15);
+}
+
+body.theme-light .favicon-inner-glow {
+  background: radial-gradient(circle at center, hsla(var(--domain-hue), 75%, 50%, 0.15) 0%, transparent 75%);
+}
+
+body.theme-light .favicon-wrapper:hover, body.theme-light .group:hover .favicon-wrapper {
+  border-color: hsl(var(--domain-hue), 75%, 45%) !important;
+  box-shadow: 0 0 12px hsla(var(--domain-hue), 75%, 45%, 0.25);
+}
+
+/* Make sure dark/light favicons have a clean drop shadow so transparent logos pop clearly */
+.favicon-wrapper img {
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.35));
+}
+body.theme-light .favicon-wrapper img {
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.12));
+}
+
+/* Smart Favicon Theme Adaptation for Transparent Dark/Light Logos (like Nike, GitHub, X) */
+body:not(.theme-light) .favicon-wrapper img.smart-favicon-dark {
+  filter: invert(1) brightness(1.8) drop-shadow(0 0 1px rgba(255, 255, 255, 0.4)) !important;
+}
+body.theme-light .favicon-wrapper img.smart-favicon-light {
+  filter: invert(1) brightness(0.2) drop-shadow(0 0 1px rgba(0, 0, 0, 0.2)) !important;
+}
+
