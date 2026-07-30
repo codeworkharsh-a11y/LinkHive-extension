@@ -20,9 +20,9 @@ const DEFAULT_TODOS = [
 
 const DEFAULT_SETTINGS = {
   blur: '12',
-  neonHex: '#22c55e',
-  neonRgb: '34 197 94',
-  wallpaper: '#0b1121',
+  neonHex: '#2f9844',
+  neonRgb: '47 152 68',
+  wallpaper: 'silk-wave',
   weatherCity: 'San Francisco',
   showWeather: true,
   showTodo: true,
@@ -34,18 +34,20 @@ const DEFAULT_SETTINGS = {
   shortenTitles: false,
   openNewTab: false,
   showDescriptions: true,
-  quickSaveDest: 'Current Page',
-  quickSaveShortcut: 'Not set',
+  quickSaveDest: 'Home',
+  quickSaveShortcut: 'Alt+Shift+S',
   weatherWidgetPos: { colIndex: 0, order: -2 },
   todoWidgetPos: { colIndex: 0, order: -1 },
   calendarWidgetPos: { colIndex: 1, order: -2 }
 };
 
 const WALLPAPERS = [
+  'silk-wave',           // Animated silk background (default)
   '#0b1121',
   'linear-gradient(to right bottom, #0f172a, #312e81)',
   'linear-gradient(to right bottom, #171717, #7f1d1d)',
   'linear-gradient(to right bottom, #064e3b, #020617)',
+  "url('Wallpapers/silk_dark.png')",
   "url('Wallpapers/10000.jpg')",
   "url('Wallpapers/10091.jpg')",
   "url('Wallpapers/10129.jpg')",
@@ -121,16 +123,18 @@ window.addEventListener('DOMContentLoaded', () => {
   }
 
   // Settings Tab Switching logic
+  const tabBtnAccount = document.getElementById('tab-btn-account');
   const tabBtnGeneral = document.getElementById('tab-btn-general');
   const tabBtnWallpapers = document.getElementById('tab-btn-wallpapers');
   const tabBtnWidgets = document.getElementById('tab-btn-widgets');
 
+  const tabAccount = document.getElementById('settings-tab-account');
   const tabGeneral = document.getElementById('settings-tab-general');
   const tabWallpapers = document.getElementById('settings-tab-wallpapers');
   const tabWidgets = document.getElementById('settings-tab-widgets');
   const settingsTitle = document.getElementById('settings-header-title');
 
-  if (tabBtnGeneral && tabBtnWallpapers && tabBtnWidgets) {
+  if (tabBtnGeneral && tabBtnWallpapers && tabBtnWidgets && tabBtnAccount) {
     const setTabActive = (btn) => {
       btn.classList.remove('text-slate-400', 'hover:text-white', 'hover:bg-slate-800/50', 'border-transparent');
       btn.classList.add('bg-neon-green/10', 'text-neon-green', 'border-neon-green/20');
@@ -140,13 +144,22 @@ window.addEventListener('DOMContentLoaded', () => {
       btn.classList.remove('bg-neon-green/10', 'text-neon-green', 'border-neon-green/20');
     };
     const hideAllTabs = () => {
+      tabAccount.classList.add('hidden');
       tabGeneral.classList.add('hidden');
       tabWallpapers.classList.add('hidden');
       tabWidgets.classList.add('hidden');
+      setTabInactive(tabBtnAccount);
       setTabInactive(tabBtnGeneral);
       setTabInactive(tabBtnWallpapers);
       setTabInactive(tabBtnWidgets);
     };
+
+    tabBtnAccount.addEventListener('click', () => {
+      hideAllTabs();
+      setTabActive(tabBtnAccount);
+      tabAccount.classList.remove('hidden');
+      if (settingsTitle) settingsTitle.textContent = 'Account & Sync';
+    });
 
     tabBtnGeneral.addEventListener('click', () => {
       hideAllTabs();
@@ -248,13 +261,29 @@ async function setLocalData(key, val) {
 }
 
 async function loadData() {
+  let supabaseData = null;
+  if (typeof getCurrentUser === 'function') {
+    try {
+      const user = await getCurrentUser();
+      if (user) {
+        const { data, error } = await supabaseClient.from('user_data').select('data').eq('user_id', user.id).single();
+        if (error) {
+          if (error.code !== 'PGRST116') { // PGRST116 is "No rows found" which is fine for new users
+            console.error('Supabase select error:', error);
+          }
+        }
+        if (data && data.data) supabaseData = data.data;
+      }
+    } catch(e) { console.error('Supabase load exception:', e); }
+  }
+
+  // 1. Load Local Data First
   state.tabs = await getStorageData('tabs', null);
   state.cards = await getStorageData('cards', null);
   state.todos = await getStorageData('todos', DEFAULT_TODOS);
   const storedSettings = await getStorageData('settings', null);
   state.settings = { ...DEFAULT_SETTINGS, ...(storedSettings || {}) };
 
-  // Try to get from local first, then sync (for migration from older versions)
   let localNotepads = await getLocalData('notepads', null);
   if (!localNotepads) {
     localNotepads = await getStorageData('notepads', null);
@@ -268,7 +297,7 @@ async function loadData() {
   state.notepads = localNotepads;
   state.weatherCache = await getLocalData('weatherCache', null);
 
-  // MIGRATION LOGIC FOR NOTEPADS
+  // 2. Perform any needed migrations on the local data
   if (!state.notepads) {
     state.notepads = [];
     if (state.notepadText !== undefined || state.settings.showNotepad !== undefined) {
@@ -282,11 +311,9 @@ async function loadData() {
       delete state.notepadText;
       delete state.settings.showNotepad;
       delete state.settings.notepadPos;
-      await saveData();
     }
   }
 
-  // MIGRATION LOGIC
   if (!state.tabs) {
     const oldCategories = await getStorageData('categories', null);
     const homeTabId = 'tab-home';
@@ -308,10 +335,17 @@ async function loadData() {
       state.settings.activeTab = homeTabId;
       delete state.settings.activeCategory;
     }
-
-    await saveData();
   } else {
     state.bookmarks = await getStorageData('bookmarks', DEFAULT_BOOKMARKS);
+  }
+
+  // 3. Override local data with Supabase data if logged in
+  if (supabaseData) {
+    if (supabaseData.tabs) state.tabs = supabaseData.tabs;
+    if (supabaseData.cards) state.cards = supabaseData.cards;
+    if (supabaseData.todos) state.todos = supabaseData.todos;
+    if (supabaseData.notepads) state.notepads = supabaseData.notepads;
+    if (supabaseData.bookmarks) state.bookmarks = supabaseData.bookmarks;
   }
 
   let customWall = null;
@@ -369,6 +403,28 @@ async function saveData() {
       localStorage.setItem('customWallpapers', JSON.stringify(customWallpapers || []));
     }
   }
+
+  // Push to Supabase if logged in
+  if (typeof getCurrentUser === 'function') {
+    try {
+      const user = await getCurrentUser();
+      if (user) {
+        const snapshot = {
+          tabs: state.tabs,
+          cards: state.cards,
+          bookmarks: state.bookmarks,
+          todos: state.todos,
+          notepads: state.notepads
+        };
+        const { error } = await supabaseClient.from('user_data').upsert({ user_id: user.id, data: snapshot });
+        if (error) {
+          console.error('Supabase upsert error:', error);
+        }
+      }
+    } catch (e) {
+      console.error('Supabase save exception:', e);
+    }
+  }
 }
 
 // Generates a random ID
@@ -415,14 +471,25 @@ function applyTheme(autoUpdateColor = true) {
 
   const bgVideo = document.getElementById('bg-video');
   if (state.settings.customWallpaperType === 'video' && state.settings.customWallpaper) {
+    stopSilkWave();
     if (bgVideo && bgVideo.src !== state.settings.customWallpaper) {
       bgVideo.src = state.settings.customWallpaper;
     }
-    if (bgVideo) bgVideo.classList.remove('hidden');
+    if (bgVideo && bgVideo.classList) bgVideo.classList.remove('hidden');
     document.documentElement.style.setProperty('--bg-wallpaper', '#0b1121');
     analyzeBackgroundBrightness(state.settings.customWallpaper, true, autoUpdateColor);
+  } else if (state.settings.wallpaper === 'silk-wave') {
+    // Animated silk wave canvas background
+    if (bgVideo && bgVideo.classList) { bgVideo.classList.add('hidden'); bgVideo.src = ''; }
+    document.documentElement.style.setProperty('--bg-wallpaper', '#050e07');
+    startSilkWave();
+    if (document.body && document.body.classList) document.body.classList.remove('theme-light');
+    currentBgSrc = null;
+    // Silk-wave default accent: #2f9844 (rich forest green, feels premium not neon)
+    if (autoUpdateColor) _applyAccentColor('#2f9844');
   } else {
-    if (bgVideo) {
+    stopSilkWave();
+    if (bgVideo && bgVideo.classList) {
       bgVideo.classList.add('hidden');
       bgVideo.src = '';
     }
@@ -439,13 +506,218 @@ function applyTheme(autoUpdateColor = true) {
       if (srcMatch && srcMatch[1]) {
         analyzeBackgroundBrightness(srcMatch[1], false, autoUpdateColor);
       } else {
-        document.body.classList.remove('theme-light');
+        if (document.body && document.body.classList) document.body.classList.remove('theme-light');
         currentBgSrc = null;
       }
     } else {
-      document.body.classList.remove('theme-light');
+      // Solid color or CSS gradient — use curated luxe accents keyed to the palette
+      if (autoUpdateColor) {
+        const w = state.settings.wallpaper || '';
+        if (w.includes('312e81') || w.includes('0f172a')) {
+          // Deep indigo/midnight → soft periwinkle lavender
+          setLuxeAccent(245, false);
+        } else if (w.includes('7f1d1d') || w.includes('171717')) {
+          // Dark crimson/charcoal → muted rose gold
+          setLuxeAccent(345, false);
+        } else if (w.includes('064e3b') || w.includes('020617')) {
+          // Dark forest/deep space → soft teal-jade
+          setLuxeAccent(160, false);
+        } else {
+          // Pure dark (#0b1121 and similar) → cool steel blue
+          setLuxeAccent(215, false);
+        }
+      }
+      if (document.body && document.body.classList) document.body.classList.remove('theme-light');
       currentBgSrc = null;
     }
+  }
+}
+
+// ── Welcome Modal Helpers (module-scope so any function can call them) ──────
+function showWelcomeModal() {
+  const modal = document.getElementById('cloud-sync-modal');
+  const card = document.getElementById('welcome-card');
+  const rightTools = document.getElementById('right-tools-container');
+  if (!modal) return;
+  modal.classList.remove('hidden');
+  modal.classList.add('flex');
+  void modal.offsetWidth;
+  modal.classList.remove('opacity-0');
+  if (card) setTimeout(() => card.classList.add('modal-visible'), 20);
+  if (rightTools) rightTools.style.display = 'none';
+}
+
+function hideWelcomeModal() {
+  const modal = document.getElementById('cloud-sync-modal');
+  const card = document.getElementById('welcome-card');
+  const rightTools = document.getElementById('right-tools-container');
+  if (!modal) return;
+  modal.classList.add('opacity-0');
+  if (card) card.classList.remove('modal-visible');
+  setTimeout(() => {
+    modal.classList.remove('flex');
+    modal.classList.add('hidden');
+    if (rightTools) rightTools.style.display = '';
+  }, 300);
+}
+// ────────────────────────────────────────────────────────────────────────────
+
+// ── Silk Wave Canvas Engine (newtab background) ───────────────────────────────
+let _silkAnimId = null;
+let _silkCtx = null;
+let _silkT = 0;
+
+const SILK_WAVES = Array.from({ length: 7 }, (_, i) => ({
+  amp: 55 + i * 18,
+  freq: 0.0014 + i * 0.0004,
+  speed: 0.00035 + i * 0.00012,
+  phase: (Math.PI * 2 * i) / 7,
+  yBase: 0.3 + (i / 7) * 0.6,
+  thickness: 1.2 + i * 0.6,
+  hue: 140 + i * 6,
+  lightness: 5 + i * 2.5,
+  alpha: 0.55 - i * 0.05,
+}));
+
+function _silkDraw() {
+  const canvas = document.getElementById('bg-silk-canvas');
+  if (!canvas) return;
+  const ctx = _silkCtx || (canvas.getContext('2d'));
+  if (!_silkCtx) _silkCtx = ctx;
+  const W = canvas.width;
+  const H = canvas.height;
+
+  ctx.clearRect(0, 0, W, H);
+
+  const bg = ctx.createLinearGradient(0, 0, 0, H);
+  bg.addColorStop(0, '#030d05');
+  bg.addColorStop(1, '#060f08');
+  ctx.fillStyle = bg;
+  ctx.fillRect(0, 0, W, H);
+
+  for (let wi = SILK_WAVES.length - 1; wi >= 0; wi--) {
+    const w = SILK_WAVES[wi];
+    const yMid = H * w.yBase;
+
+    ctx.beginPath();
+    ctx.moveTo(0, H);
+    for (let x = 0; x <= W; x += 3) {
+      const y = yMid
+        + Math.sin(x * w.freq + _silkT * w.speed + w.phase) * w.amp
+        + Math.sin(x * w.freq * 1.7 + _silkT * w.speed * 0.6 + w.phase * 1.3) * (w.amp * 0.45)
+        + Math.cos(x * w.freq * 0.5 + _silkT * w.speed * 1.4 + w.phase * 0.7) * (w.amp * 0.25);
+      if (x === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+    }
+    ctx.lineTo(W, H);
+    ctx.closePath();
+
+    const grad = ctx.createLinearGradient(0, yMid - w.amp, 0, yMid + w.amp + H * 0.1);
+    grad.addColorStop(0, `hsla(${w.hue},55%,${w.lightness + 5}%,${w.alpha})`);
+    grad.addColorStop(0.5, `hsla(${w.hue},60%,${w.lightness}%,${w.alpha * 0.7})`);
+    grad.addColorStop(1, `hsla(${w.hue},45%,${w.lightness - 2}%,0)`);
+    ctx.fillStyle = grad;
+    ctx.fill();
+
+    // Silk sheen ridge
+    ctx.beginPath();
+    for (let x = 0; x <= W; x += 3) {
+      const y = yMid
+        + Math.sin(x * w.freq + _silkT * w.speed + w.phase) * w.amp
+        + Math.sin(x * w.freq * 1.7 + _silkT * w.speed * 0.6 + w.phase * 1.3) * (w.amp * 0.45)
+        + Math.cos(x * w.freq * 0.5 + _silkT * w.speed * 1.4 + w.phase * 0.7) * (w.amp * 0.25);
+      if (x === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+    }
+    ctx.strokeStyle = `hsla(${w.hue + 20},70%,${w.lightness + 18}%,${w.alpha * 0.35})`;
+    ctx.lineWidth = w.thickness;
+    ctx.stroke();
+  }
+
+  // Top vignette
+  const vig = ctx.createLinearGradient(0, 0, 0, H * 0.35);
+  vig.addColorStop(0, 'rgba(3,13,5,0.7)');
+  vig.addColorStop(1, 'rgba(3,13,5,0)');
+  ctx.fillStyle = vig;
+  ctx.fillRect(0, 0, W, H);
+
+  _silkT++;
+  _silkAnimId = requestAnimationFrame(_silkDraw);
+}
+
+function startSilkWave() {
+  const canvas = document.getElementById('bg-silk-canvas');
+  if (!canvas) return;
+  // Size canvas
+  canvas.width = window.innerWidth;
+  canvas.height = window.innerHeight;
+  canvas.style.display = 'block';
+  if (!_silkAnimId) _silkDraw();
+  // Handle resize
+  if (!startSilkWave._resizeListener) {
+    startSilkWave._resizeListener = () => {
+      if (_silkAnimId) {
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
+        _silkCtx = canvas.getContext('2d');
+      }
+    };
+    window.addEventListener('resize', startSilkWave._resizeListener);
+  }
+}
+
+function stopSilkWave() {
+  if (_silkAnimId) { cancelAnimationFrame(_silkAnimId); _silkAnimId = null; }
+  const canvas = document.getElementById('bg-silk-canvas');
+  if (canvas) canvas.style.display = 'none';
+}
+// ─────────────────────────────────────────────────────────────────────────────
+
+async function syncAccountUI() {
+  if (typeof getCurrentUser !== 'function') return;
+  const user = await getCurrentUser();
+  const btn = document.getElementById('btn-account-action');
+  const email = document.getElementById('account-email');
+  const status = document.getElementById('account-status');
+  const avatar = document.getElementById('account-avatar');
+
+  if (!btn || !email) return;
+
+  if (user) {
+    email.textContent = user.email || 'Logged In';
+    status.textContent = 'Cloud sync active';
+    status.className = 'text-neon-green text-xs mt-0.5 font-semibold';
+    btn.textContent = 'Log Out';
+    btn.className = 'px-4 py-2 bg-red-500/10 hover:bg-red-500/20 text-red-400 text-sm font-medium rounded-lg transition-colors border border-red-500/20';
+    btn.onclick = async () => {
+      if (confirm('Are you sure you want to log out? This will completely reset the extension to its default state on this device (your cloud data remains safe).')) {
+        await signOut();
+        
+        // Wipe all local storage
+        localStorage.clear();
+        if (typeof chrome !== 'undefined' && chrome.storage) {
+          await new Promise(resolve => chrome.storage.local.clear(resolve));
+          await new Promise(resolve => chrome.storage.sync.clear(resolve));
+        }
+        
+        // Reload to fresh state
+        window.location.reload();
+      }
+    };
+    if (user.user_metadata && user.user_metadata.avatar_url) {
+      avatar.innerHTML = `<img src="${user.user_metadata.avatar_url}" class="w-full h-full object-cover">`;
+      avatar.classList.remove('bg-slate-700');
+    }
+  } else {
+    email.textContent = 'Not logged in';
+    status.textContent = 'Local storage only';
+    status.className = 'text-slate-500 text-xs mt-0.5';
+    btn.textContent = 'Log In';
+    btn.className = 'px-4 py-2 bg-slate-700 hover:bg-slate-600 text-white text-sm font-medium rounded-lg transition-colors';
+    btn.onclick = () => {
+      document.getElementById('close-sidebar').click(); // close settings sidebar first
+      setTimeout(() => showWelcomeModal(), 150); // slight delay so sidebar closes cleanly
+    };
+    avatar.innerHTML = `<span class="material-symbols-outlined">person</span>`;
+    avatar.classList.add('bg-slate-700');
   }
 }
 
@@ -1979,6 +2251,64 @@ function renderWallpapers() {
       (isCustom && state.settings.customWallpaper && (`url(${state.settings.customWallpaper})` === bg || state.settings.customWallpaper === bg));
 
     btn.className = `h-20 rounded-lg border-2 overflow-hidden relative cursor-pointer group ${isSelected ? 'border-neon-green' : 'border-transparent hover:border-slate-500'}`;
+
+    // Special tile for silk-wave animated wallpaper
+    if (bg === 'silk-wave') {
+      btn.innerHTML = `
+        <canvas class="absolute inset-0 w-full h-full silk-preview-canvas" width="200" height="80"></canvas>
+        <div class="absolute inset-0 flex flex-col items-center justify-center gap-0.5 z-10">
+          <span class="text-[9px] font-bold text-emerald-400 tracking-widest uppercase drop-shadow-md">✦ Silk Wave</span>
+          <span class="text-[8px] text-emerald-300/70">Animated</span>
+        </div>
+      `;
+      btn.onclick = async () => {
+        state.settings.wallpaper = 'silk-wave';
+        state.settings.customWallpaper = null;
+        state.settings.customWallpaperType = null;
+        await saveData();
+        applyTheme();
+        syncUI();
+        renderWallpapers();
+      };
+      // Mini silk wave animation for the preview tile
+      requestAnimationFrame(() => {
+        const pc = btn.querySelector('.silk-preview-canvas');
+        if (!pc) return;
+        const pctx = pc.getContext('2d');
+        let pt = 0;
+        const PW = pc.width, PH = pc.height;
+        const previewWaves = SILK_WAVES.map(w => ({ ...w, amp: w.amp * 0.28, freq: w.freq * 0.7 }));
+        function drawPreview() {
+          if (!pc.isConnected) return;
+          pctx.clearRect(0, 0, PW, PH);
+          const pbg = pctx.createLinearGradient(0, 0, 0, PH);
+          pbg.addColorStop(0, '#030d05'); pbg.addColorStop(1, '#060f08');
+          pctx.fillStyle = pbg; pctx.fillRect(0, 0, PW, PH);
+          for (let wi = previewWaves.length - 1; wi >= 0; wi--) {
+            const w = previewWaves[wi];
+            const yMid = PH * w.yBase;
+            pctx.beginPath();
+            pctx.moveTo(0, PH);
+            for (let x = 0; x <= PW; x += 2) {
+              const y = yMid + Math.sin(x * w.freq + pt * w.speed + w.phase) * w.amp
+                + Math.sin(x * w.freq * 1.7 + pt * w.speed * 0.6 + w.phase * 1.3) * (w.amp * 0.45);
+              if (x === 0) pctx.moveTo(x, y); else pctx.lineTo(x, y);
+            }
+            pctx.lineTo(PW, PH); pctx.closePath();
+            const g = pctx.createLinearGradient(0, yMid - w.amp, 0, yMid + w.amp + PH * 0.1);
+            g.addColorStop(0, `hsla(${w.hue},55%,${w.lightness + 5}%,${w.alpha})`);
+            g.addColorStop(1, `hsla(${w.hue},45%,${w.lightness - 2}%,0)`);
+            pctx.fillStyle = g; pctx.fill();
+          }
+          pt++;
+          requestAnimationFrame(drawPreview);
+        }
+        drawPreview();
+      });
+      grid.appendChild(btn);
+      return; // skip normal rendering
+    }
+
     let displayBg = bg;
     if (bg.startsWith('url') && bg.includes('Wallpapers/')) {
       displayBg = bg.replace("')", `?v=${Date.now()}')`);
@@ -2745,9 +3075,58 @@ function applySmartFaviconTheme(imgElement) {
   };
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Luxe Accent Color Engine
+// Philosophy: rich, muted, never harsh — think jewel tones and silk, not neon.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Apply a curated accent from just a hue angle.
+ * Saturation is kept in the "jewel tone" range (48-62%) and lightness is tuned
+ * so the glow reads clearly on dark glass without screaming.
+ * @param {number} hue  - 0-360 hue angle
+ * @param {boolean} isLight - whether the background is light
+ */
+function setLuxeAccent(hue, isLight) {
+  // Jewel-tone saturation — rich but never garish
+  const s = isLight ? 0.52 : 0.58;
+  // Lightness: bright enough to glow on dark glass, restrained enough to feel premium
+  const l = isLight ? 0.36 : 0.62;
+  // hslToHex expects h in 0-1, not degrees
+  const hex = hslToHex(hue / 360, s, l);
+  _applyAccentColor(hex);
+}
+
+/**
+ * Commits an accent hex to state, CSS vars, and the settings UI.
+ */
+function _applyAccentColor(hex) {
+  state.settings.neonHex = hex;
+  state.settings.neonAccent = hex;
+  document.documentElement.style.setProperty('--neon-hex', hex);
+
+  // Derive RGB triple for CSS custom property (used in box-shadows, etc.)
+  const tempDiv = document.createElement('div');
+  tempDiv.style.color = hex;
+  document.body.appendChild(tempDiv);
+  const rgbStr = window.getComputedStyle(tempDiv).color.match(/\d+,?\s*\d+,?\s*\d+/);
+  if (rgbStr) {
+    const neonRgbVal = rgbStr[0].replace(/,/g, '');
+    document.documentElement.style.setProperty('--neon-rgb', neonRgbVal);
+    state.settings.neonRgb = neonRgbVal;
+  }
+  document.body.removeChild(tempDiv);
+
+  const colorPicker = document.getElementById('color-picker');
+  if (colorPicker) colorPicker.value = hex;
+  const colorHexSpan = document.getElementById('color-hex');
+  if (colorHexSpan) colorHexSpan.textContent = hex;
+}
+// ─────────────────────────────────────────────────────────────────────────────
+
 async function analyzeBackgroundBrightness(src, isVideo, autoUpdateColor = true) {
   if (!src) {
-    document.body.classList.remove('theme-light');
+    if (document.body && document.body.classList) document.body.classList.remove('theme-light');
     return;
   }
 
@@ -2757,8 +3136,8 @@ async function analyzeBackgroundBrightness(src, isVideo, autoUpdateColor = true)
   try {
     const canvas = document.createElement('canvas');
     const ctx = canvas.getContext('2d', { willReadFrequently: true });
-    canvas.width = 100;
-    canvas.height = 100;
+    canvas.width = 120;
+    canvas.height = 120;
 
     let imageOrVideoElement;
 
@@ -2769,29 +3148,16 @@ async function analyzeBackgroundBrightness(src, isVideo, autoUpdateColor = true)
 
       await new Promise((resolve, reject) => {
         let loaded = false;
-
         imageOrVideoElement.onloadeddata = () => {
           if (imageOrVideoElement.readyState >= 2) {
             imageOrVideoElement.currentTime = Math.min(0.5, imageOrVideoElement.duration || 0);
           }
         };
-
-        imageOrVideoElement.onseeked = () => {
-          loaded = true;
-          resolve();
-        };
-
-        imageOrVideoElement.onerror = (e) => {
-          console.warn("Video load error for analysis", e);
-          reject(e);
-        };
-
+        imageOrVideoElement.onseeked = () => { loaded = true; resolve(); };
+        imageOrVideoElement.onerror = (e) => { console.warn('Video load error', e); reject(e); };
         imageOrVideoElement.src = src;
         imageOrVideoElement.load();
-
-        setTimeout(() => {
-          if (!loaded) resolve();
-        }, 2000);
+        setTimeout(() => { if (!loaded) resolve(); }, 2000);
       });
     } else {
       imageOrVideoElement = new Image();
@@ -2807,115 +3173,135 @@ async function analyzeBackgroundBrightness(src, isVideo, autoUpdateColor = true)
     const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
     const data = imageData.data;
 
-    let totalR = 0, totalG = 0, totalB = 0;
-    const buckets = Array.from({ length: 36 }, () => ({ r: 0, g: 0, b: 0, count: 0, score: 0 }));
-    let validPixels = 0;
-
+    // ── Pass 1: brightness & temperature ──────────────────────────────────
+    let totalR = 0, totalG = 0, totalB = 0, validPixels = 0;
     for (let i = 0; i < data.length; i += 4) {
-      const pr = data[i], pg = data[i + 1], pb = data[i + 2], pa = data[i + 3];
-      if (pa < 128) continue;
-      
-      totalR += pr;
-      totalG += pg;
-      totalB += pb;
+      if (data[i + 3] < 128) continue;
+      totalR += data[i]; totalG += data[i + 1]; totalB += data[i + 2];
       validPixels++;
-
-      const [ph, ps, pl] = rgbToHsl(pr, pg, pb);
-      // Only bucket pixels that have decent color saturation and aren't pure black/white highlights
-      if (ps > 0.12 && pl > 0.12 && pl < 0.88) {
-        // Weight by saturation and mid-tone luminance (colors around mid-light are most rich)
-        const weight = ps * ps * (1 - Math.abs(pl - 0.5) * 1.4);
-        const bucketIdx = Math.floor((ph % 360) / 10);
-        buckets[bucketIdx].r += pr * weight;
-        buckets[bucketIdx].g += pg * weight;
-        buckets[bucketIdx].b += pb * weight;
-        buckets[bucketIdx].score += weight;
-        buckets[bucketIdx].count++;
-      }
     }
-
     if (validPixels === 0) return;
 
-    const avgR = Math.floor(totalR / validPixels);
-    const avgG = Math.floor(totalG / validPixels);
-    const avgB = Math.floor(totalB / validPixels);
-
-    const brightness = Math.round(((avgR * 299) + (avgG * 587) + (avgB * 114)) / 1000);
+    const avgR = totalR / validPixels;
+    const avgG = totalG / validPixels;
+    const avgB = totalB / validPixels;
+    const brightness = (avgR * 299 + avgG * 587 + avgB * 114) / 1000;
     const isLight = brightness > 140;
+
     if (isLight) {
-      document.body.classList.add('theme-light');
+      if (document.body && document.body.classList) document.body.classList.add('theme-light');
     } else {
-      document.body.classList.remove('theme-light');
+      if (document.body && document.body.classList) document.body.classList.remove('theme-light');
     }
-    
+
     if (!autoUpdateColor) return;
 
-    // Find the most dominant/vibrant color bucket
-    let bestBucket = null;
-    let maxScore = 0;
-    for (const b of buckets) {
-      if (b.score > maxScore && b.count > 0) {
-        maxScore = b.score;
-        bestBucket = b;
-      }
+    // ── Pass 2: Luxe hue bucketing ────────────────────────────────────────
+    // 72 fine-grained buckets (5° each) for more precise hue detection.
+    // We weight pixels by:
+    //   • Saturation squared   (rewards vivid over muddy)
+    //   • Midtone proximity    (avoids blown highlights & crushed shadows)
+    //   • Perceptual salience  (warm hues weighted ~1.15×, cool hues 1×)
+    const NUM_BUCKETS = 72;
+    const buckets = Array.from({ length: NUM_BUCKETS }, () => ({
+      hSum: 0, sSum: 0, lSum: 0, weight: 0, count: 0
+    }));
+
+    for (let i = 0; i < data.length; i += 4) {
+      const pa = data[i + 3];
+      if (pa < 128) continue;
+      const pr = data[i], pg = data[i + 1], pb = data[i + 2];
+      const [ph, ps, pl] = rgbToHsl(pr, pg, pb);
+
+      // Skip near-black, near-white, and heavily desaturated pixels
+      if (ps < 0.10 || pl < 0.08 || pl > 0.92) continue;
+
+      // Midtone reward: peaks at pl=0.45 for dark themes (where glow looks best)
+      const midReward = 1 - Math.abs(pl - (isLight ? 0.50 : 0.42)) * 2.2;
+      if (midReward <= 0) continue;
+
+      // Perceptual warmth bias: warm hues (reds/oranges/golds) feel richer
+      const warmBias = (ph >= 0 && ph <= (60/360)) || (ph >= (300/360) && ph <= 1) ? 1.18 : 1.0;
+
+      const w = ps * ps * midReward * warmBias;
+      const bi = Math.floor((ph * 360 % 360) / (360 / NUM_BUCKETS));
+      buckets[bi].hSum += ph * w;
+      buckets[bi].sSum += ps * w;
+      buckets[bi].lSum += pl * w;
+      buckets[bi].weight += w;
+      buckets[bi].count++;
     }
 
-    let neonHex = '#06b6d4'; // Default sleek cyan/teal for pure monochrome/grayscale if no tone detected
-    if (bestBucket && maxScore > 2.0) {
-      // We found a vibrant, dominant color cluster in the wallpaper!
-      const clusterR = Math.round(bestBucket.r / bestBucket.score);
-      const clusterG = Math.round(bestBucket.g / bestBucket.score);
-      const clusterB = Math.round(bestBucket.b / bestBucket.score);
-      const [ch, cs, cl] = rgbToHsl(clusterR, clusterG, clusterB);
+    // Smooth buckets with a 3-bucket Gaussian window so adjacent hues reinforce
+    const smoothed = buckets.map((b, i) => {
+      const prev = buckets[(i - 1 + NUM_BUCKETS) % NUM_BUCKETS];
+      const next = buckets[(i + 1) % NUM_BUCKETS];
+      return {
+        weight: prev.weight * 0.25 + b.weight * 0.5 + next.weight * 0.25,
+        hSum: prev.hSum * 0.25 + b.hSum * 0.5 + next.hSum * 0.25,
+        sSum: prev.sSum * 0.25 + b.sSum * 0.5 + next.sSum * 0.25,
+        lSum: prev.lSum * 0.25 + b.lSum * 0.5 + next.lSum * 0.25,
+        count: b.count,
+      };
+    });
 
-      const neonL = isLight ? 0.38 : 0.65; // Luminous dark contrast for light mode, vivid glow for dark mode
-      const neonS = Math.max(cs, 0.85); // High saturation for the premium neon effect
-      neonHex = hslToHex(ch, neonS, neonL);
+    // Pick the highest-weight smoothed bucket
+    let best = null, maxW = 0;
+    for (const b of smoothed) {
+      if (b.weight > maxW && b.count > 0) { maxW = b.weight; best = b; }
+    }
+
+    if (best && maxW > 1.5) {
+      // Dominant hue found — extract raw values
+      const rawH_norm = best.hSum / best.weight;   // 0-1 normalized hue
+      const rawH = rawH_norm * 360;                // degrees for nudge logic
+      const rawS = best.sSum / best.weight;
+      const rawL = best.lSum / best.weight;
+
+      // ── Luxe Saturation & Lightness shaping ──────────────────────────────
+      const luxeS = 0.48 + (rawS - 0.10) / (0.90 - 0.10) * (0.62 - 0.48);
+      const clampedS = Math.min(0.65, Math.max(0.45, luxeS));
+
+      const luxeL = isLight
+        ? 0.34 + (1 - rawL) * 0.08
+        : 0.58 + rawL * 0.08;
+      const clampedL = isLight
+        ? Math.min(0.44, Math.max(0.32, luxeL))
+        : Math.min(0.68, Math.max(0.55, luxeL));
+
+      // The nudge is small (±8°) and only applied in certain ranges.
+      let elegantH = rawH;
+      if (rawH >= 0   && rawH < 30)  elegantH = rawH + 6;   // orange → amber gold
+      if (rawH >= 30  && rawH < 65)  elegantH = rawH - 5;   // yellow-green → gold
+      if (rawH >= 120 && rawH < 165) elegantH = rawH + 8;   // green → jade/teal
+      if (rawH >= 165 && rawH < 210) elegantH = rawH - 6;   // cyan → aqua
+      if (rawH >= 260 && rawH < 310) elegantH = rawH + 5;   // violet → amethyst
+      if (rawH >= 310 && rawH < 360) elegantH = rawH - 8;   // magenta → rose gold
+      elegantH = ((elegantH % 360) + 360) % 360;
+
+      // hslToHex expects h in 0-1, not degrees
+      const luxeHex = hslToHex(elegantH / 360, clampedS, clampedL);
+      _applyAccentColor(luxeHex);
+
     } else {
-      // For truly grayscale, black, white, or silver wallpapers without strong vibrant hues:
-      // Choose an aesthetic accent tone based on subtle warmth or steel coolness instead of generic green
+      // ── Graceful fallback for low-colour / monochrome wallpapers ─────────
+      // Choose a curated jewel based on the image's color temperature.
       const tempDiff = avgR - avgB;
-      if (tempDiff > 4) {
-        // Warm sepia, gold, or warm gray wallpaper -> Aesthetic Warm Gold/Amber accent
-        neonHex = isLight ? '#d97706' : '#fbbf24';
-      } else if (tempDiff < -4) {
-        // Cool steel, ice, or bluish-gray wallpaper -> Electric Cyber Blue / Ice Cyan accent
-        neonHex = isLight ? '#2563eb' : '#38bdf8';
-      } else {
-        // Pure neutral black/white/silver monochrome -> Premium Electric Indigo / Cyan Glow
-        neonHex = isLight ? '#4f46e5' : '#06b6d4';
-      }
+      let fallbackHue;
+      if      (tempDiff > 15)  fallbackHue = 38;   // warm sepia/cream → antique gold
+      else if (tempDiff > 5)   fallbackHue = 28;   // slightly warm → amber
+      else if (tempDiff < -15) fallbackHue = 210;  // cool ice/steel → sapphire
+      else if (tempDiff < -5)  fallbackHue = 195;  // slightly cool → aquamarine
+      else                     fallbackHue = 250;  // neutral → soft amethyst
+      setLuxeAccent(fallbackHue, isLight);
     }
-    
-    state.settings.neonHex = neonHex;
-    state.settings.neonAccent = neonHex;
-    document.documentElement.style.setProperty('--neon-hex', neonHex);
-    
-    // Update --neon-rgb 
-    let neonRgbVal = '34 197 94';
-    const tempDiv = document.createElement('div');
-    tempDiv.style.color = neonHex;
-    document.body.appendChild(tempDiv);
-    const rgbStr = window.getComputedStyle(tempDiv).color.match(/\d+, \d+, \d+/);
-    if(rgbStr) {
-      neonRgbVal = rgbStr[0].replace(/,/g, '');
-      document.documentElement.style.setProperty('--neon-rgb', neonRgbVal);
-    }
-    document.body.removeChild(tempDiv);
-    state.settings.neonRgb = neonRgbVal;
 
-    // Sync input picker and hex display text in settings menu
-    const colorPicker = document.getElementById('color-picker');
-    if (colorPicker) colorPicker.value = neonHex;
-    const colorHexSpan = document.getElementById('color-hex');
-    if (colorHexSpan) colorHexSpan.textContent = neonHex;
-    
-    // Save new color to storage
-    await saveData();
-    
+    // Persist — but don't block the UI
+    saveData();
+
   } catch (error) {
-    console.error('Error analyzing background brightness:', error);
-    document.body.classList.remove('theme-light');
+    console.error('Error analyzing background:', error);
+    if (document.body && document.body.classList) document.body.classList.remove('theme-light');
   }
 }
 
@@ -3086,6 +3472,55 @@ async function init() {
   fetchWeather();
   startClock();
   initCalendar();
+  await syncAccountUI();
+
+  // Attach Welcome Modal listeners unconditionally so they work if opened from Settings
+  const modal = document.getElementById('cloud-sync-modal');
+
+  if (modal) {
+    document.getElementById('btn-skip-login').onclick = async () => {
+      hideWelcomeModal();
+      await setLocalData('hasSeenWelcome', true);
+    };
+
+    document.getElementById('btn-login-google').onclick = async () => {
+      const btn = document.getElementById('btn-login-google');
+      const originalHTML = btn.innerHTML;
+      btn.innerHTML = 'Connecting...';
+      btn.style.pointerEvents = 'none';
+      btn.style.opacity = '0.7';
+
+      const newUser = await signInWithGoogle();
+      
+      // Always restore button state (so it's ready if they log out and log in again)
+      btn.innerHTML = originalHTML;
+      btn.style.pointerEvents = 'auto';
+      btn.style.opacity = '1';
+
+      if (newUser) {
+        hideWelcomeModal();
+        await setLocalData('hasSeenWelcome', true);
+        
+        await loadData();
+        renderNav();
+        renderBookmarks();
+        renderTodos();
+        await syncAccountUI();
+        syncUI();
+      }
+    };
+  }
+
+  // Check for first-time login
+  const hasSeenWelcome = await getLocalData('hasSeenWelcome', false);
+  if (!hasSeenWelcome && typeof getCurrentUser === 'function') {
+    const user = await getCurrentUser();
+    if (!user && modal) {
+      showWelcomeModal();
+    } else if (user) {
+      await setLocalData('hasSeenWelcome', true);
+    }
+  }
 
   // Listen for storage changes from background script (e.g. quick save)
   // so the new tab page auto-refreshes without needing a reload

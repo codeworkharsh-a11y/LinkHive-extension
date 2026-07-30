@@ -13,7 +13,8 @@
     "scripting",
     "activeTab",
     "notifications",
-    "bookmarks"
+    "bookmarks",
+    "identity"
   ],
   "host_permissions": [
     "<all_urls>"

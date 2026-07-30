@@ -20,6 +20,9 @@
   <video id="bg-video" class="fixed inset-0 w-[100vw] h-[100vh] object-cover -z-10 hidden" autoplay loop muted
     playsinline></video>
 
+  <!-- Silk Wave Canvas Background (shown when silk-wave wallpaper is selected) -->
+  <canvas id="bg-silk-canvas" class="fixed inset-0 w-[100vw] h-[100vh] -z-10 hidden" style="display:none;"></canvas>
+
   <!-- Background Blur Overlay -->
   <div id="bg-blur-overlay" class="fixed inset-0 w-[100vw] h-[100vh] -z-[5] pointer-events-none" style="backdrop-filter: blur(0px);"></div>
 
@@ -166,8 +169,13 @@
       <!-- Left Sidebar -->
       <div class="w-1/3 max-w-[240px] bg-slate-950/30 border-r border-glass-border flex flex-col p-4">
         <h2 class="text-white text-lg font-bold mb-6 px-2 mt-2">Settings</h2>
+        <button id="tab-btn-account"
+          class="flex items-center gap-3 bg-neon-green/10 text-neon-green px-4 py-3 rounded-lg font-medium transition-colors border border-neon-green/20 mb-2">
+          <span class="material-symbols-outlined text-[20px]">account_circle</span>
+          Account
+        </button>
         <button id="tab-btn-general"
-          class="flex items-center gap-3 bg-neon-green/10 text-neon-green px-4 py-3 rounded-lg font-medium transition-colors border border-neon-green/20">
+          class="flex items-center gap-3 text-slate-400 hover:text-white hover:bg-slate-800/50 px-4 py-3 rounded-lg font-medium transition-colors border border-transparent">
           <span class="material-symbols-outlined text-[20px]">settings</span>
           General
         </button>
@@ -198,9 +206,31 @@
         <!-- Scrollable Settings -->
         <div class="p-6 overflow-y-auto flex-grow custom-scrollbar">
 
-          <!-- GENERAL TAB -->
-          <div id="settings-tab-general" class="space-y-8">
+          <!-- ACCOUNT TAB -->
+          <div id="settings-tab-account" class="space-y-8">
+            <div>
+              <h3 class="text-xs font-bold text-slate-500 mb-3 tracking-wider uppercase">Your Account</h3>
+              <div class="space-y-0 bg-slate-800 border border-slate-800 rounded-xl overflow-hidden">
+                <div class="flex justify-between items-center p-4">
+                  <div class="flex items-center gap-3">
+                    <div class="w-10 h-10 bg-slate-700 rounded-full flex items-center justify-center text-slate-300 font-bold overflow-hidden" id="account-avatar">
+                      <span class="material-symbols-outlined">person</span>
+                    </div>
+                    <div>
+                      <div class="text-slate-200 text-sm font-medium" id="account-email">Not logged in</div>
+                      <div class="text-slate-500 text-xs mt-0.5" id="account-status">Local storage only</div>
+                    </div>
+                  </div>
+                  <button id="btn-account-action" class="px-4 py-2 bg-slate-700 hover:bg-slate-600 text-white text-sm font-medium rounded-lg transition-colors">
+                    Log In
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
 
+          <!-- GENERAL TAB -->
+          <div id="settings-tab-general" class="space-y-8 hidden">
             <!-- APPEARANCE -->
             <div>
               <h3 class="text-xs font-bold text-slate-500 mb-3 tracking-wider uppercase">Appearance</h3>
@@ -570,6 +600,256 @@
     </div>
   </div>
 
+  <!-- Cloud Sync Welcome Modal -->
+  <style>
+    /* === Welcome Screen Full-Page Styles === */
+    #cloud-sync-modal {
+      background: #050e07;
+    }
+
+    #welcome-canvas {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      display: block;
+    }
+
+    #welcome-card {
+      position: relative;
+      z-index: 10;
+      background: rgba(10, 18, 12, 0.72);
+      backdrop-filter: blur(20px) saturate(1.4);
+      -webkit-backdrop-filter: blur(20px) saturate(1.4);
+      border: 1px solid rgba(255, 255, 255, 0.07);
+      box-shadow:
+        0 32px 64px -12px rgba(0, 0, 0, 0.9),
+        0 0 0 1px rgba(255, 255, 255, 0.04),
+        inset 0 1px 0 rgba(255, 255, 255, 0.06);
+      border-radius: 28px;
+      padding: 52px 48px 44px;
+      max-width: 460px;
+      width: calc(100% - 40px);
+      text-align: center;
+      transform: scale(0.95);
+      transition: transform 0.35s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.3s ease;
+    }
+
+    #cloud-sync-modal.modal-visible #welcome-card {
+      transform: scale(1);
+    }
+
+    #welcome-accent-bar {
+      width: 40px;
+      height: 3px;
+      background: linear-gradient(90deg, #16a34a, #4ade80);
+      border-radius: 9999px;
+      margin: 0 auto 28px;
+      box-shadow: 0 0 12px rgba(74, 222, 128, 0.5);
+    }
+
+    #welcome-card h2 {
+      font-size: 30px;
+      font-weight: 800;
+      color: #ffffff;
+      letter-spacing: -0.5px;
+      margin-bottom: 12px;
+      line-height: 1.2;
+    }
+
+    #welcome-card p {
+      font-size: 14.5px;
+      color: #8a9a8e;
+      line-height: 1.65;
+      margin-bottom: 36px;
+      font-weight: 400;
+    }
+
+    #btn-login-google {
+      width: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 12px;
+      font-size: 14px;
+      font-weight: 600;
+      color: #e8f0eb;
+      background: rgba(255, 255, 255, 0.07);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      border-radius: 14px;
+      padding: 14px 24px;
+      cursor: pointer;
+      transition: background 0.2s ease, border-color 0.2s ease, transform 0.15s ease, box-shadow 0.2s ease;
+      letter-spacing: 0.01em;
+    }
+    #btn-login-google:hover {
+      background: rgba(255, 255, 255, 0.13);
+      border-color: rgba(255, 255, 255, 0.22);
+      transform: translateY(-2px);
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+    }
+    #btn-login-google:active {
+      transform: translateY(0);
+      box-shadow: none;
+    }
+
+    #btn-skip-login {
+      display: inline-block;
+      margin-top: 18px;
+      font-size: 13px;
+      color: #4a5e50;
+      background: none;
+      border: none;
+      cursor: pointer;
+      transition: color 0.2s ease;
+      padding: 6px 12px;
+      border-radius: 8px;
+      font-weight: 500;
+    }
+    #btn-skip-login:hover {
+      color: #8a9a8e;
+    }
+  </style>
+
+  <div id="cloud-sync-modal" class="fixed inset-0 z-[100] hidden items-center justify-center opacity-0 transition-opacity duration-300" style="transition: opacity 0.3s ease;">
+    <!-- Animated Canvas Background -->
+    <canvas id="welcome-canvas"></canvas>
+
+    <!-- Welcome Card -->
+    <div id="welcome-card">
+      <!-- Top Green Accent Line -->
+      <div id="welcome-accent-bar"></div>
+
+      <h2>Welcome to LinkHive</h2>
+
+      <p>Please sign in to instantly save your<br>bookmarks to the cloud.</p>
+
+      <button id="btn-login-google">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+          <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+          <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+          <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/>
+          <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
+        </svg>
+        Sign in with Google
+      </button>
+
+      <button id="btn-skip-login">Skip for now (Store locally)</button>
+    </div>
+  </div>
+
+  <script>
+    /* === Silk Wave Canvas Animation for Welcome Screen === */
+    (function initWelcomeCanvas() {
+      const modal = document.getElementById('cloud-sync-modal');
+      const canvas = document.getElementById('welcome-canvas');
+      if (!canvas) return;
+      const ctx = canvas.getContext('2d');
+      let W, H, animId;
+      const WAVES = 7;
+
+      function resize() {
+        W = canvas.width = window.innerWidth;
+        H = canvas.height = window.innerHeight;
+      }
+
+      window.addEventListener('resize', resize);
+      resize();
+
+      // Wave parameters
+      const waves = Array.from({ length: WAVES }, (_, i) => ({
+        amp: 55 + i * 18,
+        freq: 0.0014 + i * 0.0004,
+        speed: 0.00035 + i * 0.00012,
+        phase: (Math.PI * 2 * i) / WAVES,
+        yBase: 0.3 + (i / WAVES) * 0.6,
+        thickness: 1.2 + i * 0.6,
+        // Dark green palette — mirrors the fabric look in the reference
+        hue: 140 + i * 6,
+        lightness: 5 + i * 2.5,
+        alpha: 0.55 - i * 0.05,
+      }));
+
+      let t = 0;
+
+      function draw() {
+        ctx.clearRect(0, 0, W, H);
+
+        // Deep dark base
+        const bg = ctx.createLinearGradient(0, 0, 0, H);
+        bg.addColorStop(0, '#030d05');
+        bg.addColorStop(1, '#060f08');
+        ctx.fillStyle = bg;
+        ctx.fillRect(0, 0, W, H);
+
+        // Draw layered sinusoidal waves to mimic silk folds
+        for (let wi = WAVES - 1; wi >= 0; wi--) {
+          const w = waves[wi];
+          const yMid = H * w.yBase;
+
+          ctx.beginPath();
+          ctx.moveTo(0, H);
+
+          for (let x = 0; x <= W; x += 3) {
+            const y = yMid +
+              Math.sin(x * w.freq + t * w.speed + w.phase) * w.amp +
+              Math.sin(x * w.freq * 1.7 + t * w.speed * 0.6 + w.phase * 1.3) * (w.amp * 0.45) +
+              Math.cos(x * w.freq * 0.5 + t * w.speed * 1.4 + w.phase * 0.7) * (w.amp * 0.25);
+            if (x === 0) ctx.moveTo(x, y);
+            else ctx.lineTo(x, y);
+          }
+
+          ctx.lineTo(W, H);
+          ctx.closePath();
+
+          const grad = ctx.createLinearGradient(0, yMid - w.amp, 0, yMid + w.amp + H * 0.1);
+          grad.addColorStop(0, `hsla(${w.hue}, 55%, ${w.lightness + 5}%, ${w.alpha})`);
+          grad.addColorStop(0.5, `hsla(${w.hue}, 60%, ${w.lightness}%, ${w.alpha * 0.7})`);
+          grad.addColorStop(1, `hsla(${w.hue}, 45%, ${w.lightness - 2}%, 0)`);
+          ctx.fillStyle = grad;
+          ctx.fill();
+
+          // Draw the wave ridge line for the silk sheen highlight
+          ctx.beginPath();
+          for (let x = 0; x <= W; x += 3) {
+            const y = yMid +
+              Math.sin(x * w.freq + t * w.speed + w.phase) * w.amp +
+              Math.sin(x * w.freq * 1.7 + t * w.speed * 0.6 + w.phase * 1.3) * (w.amp * 0.45) +
+              Math.cos(x * w.freq * 0.5 + t * w.speed * 1.4 + w.phase * 0.7) * (w.amp * 0.25);
+            if (x === 0) ctx.moveTo(x, y);
+            else ctx.lineTo(x, y);
+          }
+          ctx.strokeStyle = `hsla(${w.hue + 20}, 70%, ${w.lightness + 18}%, ${w.alpha * 0.35})`;
+          ctx.lineWidth = w.thickness;
+          ctx.stroke();
+        }
+
+        // Subtle top vignette
+        const vignette = ctx.createLinearGradient(0, 0, 0, H * 0.35);
+        vignette.addColorStop(0, 'rgba(3,13,5,0.7)');
+        vignette.addColorStop(1, 'rgba(3,13,5,0)');
+        ctx.fillStyle = vignette;
+        ctx.fillRect(0, 0, W, H);
+
+        t++;
+        animId = requestAnimationFrame(draw);
+      }
+
+      // Start/stop animation based on modal visibility
+      const observer = new MutationObserver(() => {
+        if (!modal.classList.contains('hidden')) {
+          if (!animId) draw();
+        } else {
+          if (animId) { cancelAnimationFrame(animId); animId = null; }
+        }
+      });
+      observer.observe(modal, { attributes: true, attributeFilter: ['class'] });
+    })();
+  </script>
+
+  <script src="supabase-js.min.js"></script>
+  <script src="config.js"></script>
+  <script src="supabase.js"></script>
   <script src="script.js"></script>
 </body>
 
