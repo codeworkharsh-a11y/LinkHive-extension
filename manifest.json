@@ -2,6 +2,7 @@
   "manifest_version": 3,
   "name": "LinkHive",
   "version": "1.0",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAu5P65c2/2V6aCHiIDu6BNd0Y+pFfkSc31ooNIYJvzJuFn7LB76thkbQfJaYuD/KR7TrJtHyNXZuVVd+qerBPDg7Kdmprdz6Q8BJJ22atTUlkoer9LhXVjsjBajpQOyqn1D3BJWwS0dZRq49R82qHEaIip5+7hyx2Fp/eRKRklKJW2Qfj+MF6PJWKuik3bzDoiTZUhqO7DH9BpF+RxkbRadAyhuykRZVoscr1xiFGyFcI9Ddh5ut4SSmLB4GEGWFZxtuwq/PbC585X/CT05LcHdhjla8oAsIFw7He2o3SRDTkx54RLjt0AQN0n3gr7FZs/VCmbnR3X9ooT11a6dHFGQIDAQAB",
   "description": "LinkHive — A personal bookmark and productivity dashboard for the new tab page.",
   "chrome_url_overrides": {
     "newtab": "newtab.html"
