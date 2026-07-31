@@ -19,7 +19,7 @@ const DEFAULT_TODOS = [
 ];
 
 const DEFAULT_SETTINGS = {
-  blur: '12',
+  blur: '21',
   neonHex: '#2f9844',
   neonRgb: '47 152 68',
   wallpaper: 'silk-wave',
@@ -32,7 +32,7 @@ const DEFAULT_SETTINGS = {
   groupTools: false,
   hideExtraBookmarks: false,
   shortenTitles: false,
-  openNewTab: false,
+  openNewTab: true,
   showDescriptions: true,
   quickSaveDest: 'Home',
   quickSaveShortcut: 'Alt+Shift+S',
@@ -237,6 +237,29 @@ async function setStorageData(key, val) {
   });
 }
 
+async function setMultipleStorageData(dataObj) {
+  if (typeof chrome === 'undefined' || !chrome.storage) {
+    for (const key in dataObj) {
+      localStorage.setItem(key, JSON.stringify(dataObj[key]));
+    }
+    return;
+  }
+
+  return new Promise((resolve) => {
+    chrome.storage.sync.set(dataObj, () => {
+      if (chrome.runtime.lastError) {
+        console.warn(`Sync failed for multiple keys, falling back to local storage. Error: ${chrome.runtime.lastError.message}`);
+        const keys = Object.keys(dataObj);
+        chrome.storage.sync.remove(keys, () => {
+          chrome.storage.local.set(dataObj, resolve);
+        });
+      } else {
+        chrome.storage.local.set(dataObj, resolve);
+      }
+    });
+  });
+}
+
 async function getLocalData(key, defaultVal) {
   if (typeof chrome === 'undefined' || !chrome.storage) {
     const local = localStorage.getItem(key);
@@ -339,13 +362,21 @@ async function loadData() {
     state.bookmarks = await getStorageData('bookmarks', DEFAULT_BOOKMARKS);
   }
 
+  state.lastModified = await getStorageData('lastModified', 0);
+
   // 3. Override local data with Supabase data if logged in
   if (supabaseData) {
-    if (supabaseData.tabs) state.tabs = supabaseData.tabs;
-    if (supabaseData.cards) state.cards = supabaseData.cards;
-    if (supabaseData.todos) state.todos = supabaseData.todos;
-    if (supabaseData.notepads) state.notepads = supabaseData.notepads;
-    if (supabaseData.bookmarks) state.bookmarks = supabaseData.bookmarks;
+    const cloudLastModified = supabaseData.lastModified || 0;
+    
+    // Only overwrite local data if cloud data is newer or they are the same (initial sync)
+    if (cloudLastModified >= state.lastModified) {
+      if (supabaseData.tabs) state.tabs = supabaseData.tabs;
+      if (supabaseData.cards) state.cards = supabaseData.cards;
+      if (supabaseData.todos) state.todos = supabaseData.todos;
+      if (supabaseData.notepads) state.notepads = supabaseData.notepads;
+      if (supabaseData.bookmarks) state.bookmarks = supabaseData.bookmarks;
+      state.lastModified = cloudLastModified;
+    }
   }
 
   let customWall = null;
@@ -372,15 +403,20 @@ async function loadData() {
 }
 
 async function saveData() {
-  await setStorageData('tabs', state.tabs);
-  await setStorageData('cards', state.cards);
-  await setStorageData('bookmarks', state.bookmarks);
-  await setStorageData('todos', state.todos);
+  state.lastModified = Date.now();
+  const { customWallpaper, customWallpaperType, customWallpapers, ...syncSettings } = state.settings;
+
+  await setMultipleStorageData({
+    lastModified: state.lastModified,
+    tabs: state.tabs,
+    cards: state.cards,
+    bookmarks: state.bookmarks,
+    todos: state.todos,
+    settings: syncSettings
+  });
+
   await setLocalData('notepads', state.notepads);
   await setLocalData('weatherCache', state.weatherCache);
-
-  const { customWallpaper, customWallpaperType, customWallpapers, ...syncSettings } = state.settings;
-  await setStorageData('settings', syncSettings);
   const toSaveLocal = { customWallpapers: customWallpapers || [] };
   if (customWallpaper) {
     toSaveLocal.customWallpaper = customWallpaper;
@@ -404,27 +440,38 @@ async function saveData() {
     }
   }
 
-  // Push to Supabase if logged in
-  if (typeof getCurrentUser === 'function') {
-    try {
-      const user = await getCurrentUser();
-      if (user) {
-        const snapshot = {
-          tabs: state.tabs,
-          cards: state.cards,
-          bookmarks: state.bookmarks,
-          todos: state.todos,
-          notepads: state.notepads
-        };
-        const { error } = await supabaseClient.from('user_data').upsert({ user_id: user.id, data: snapshot });
-        if (error) {
-          console.error('Supabase upsert error:', error);
+  // Push to Supabase with a 10-second debounce
+  debouncedSupabaseSync();
+}
+
+let supabaseSyncTimeout = null;
+function debouncedSupabaseSync() {
+  if (supabaseSyncTimeout) clearTimeout(supabaseSyncTimeout);
+  supabaseSyncTimeout = setTimeout(async () => {
+    if (typeof getCurrentUser === 'function') {
+      try {
+        const user = await getCurrentUser();
+        if (user) {
+          const snapshot = {
+            tabs: state.tabs,
+            cards: state.cards,
+            bookmarks: state.bookmarks,
+            todos: state.todos,
+            notepads: state.notepads,
+            lastModified: state.lastModified
+          };
+          const { error } = await supabaseClient.from('user_data').upsert({ user_id: user.id, data: snapshot });
+          if (error) {
+            console.error('Supabase upsert error:', error.message || JSON.stringify(error));
+          } else {
+            console.log('Successfully synced to Supabase (debounced).');
+          }
         }
+      } catch (e) {
+        console.error('Supabase save exception:', e);
       }
-    } catch (e) {
-      console.error('Supabase save exception:', e);
     }
-  }
+  }, 10000); // 10 seconds delay
 }
 
 // Generates a random ID
@@ -779,13 +826,15 @@ function syncUI() {
   refreshShortcutDisplay();
   window.addEventListener('focus', refreshShortcutDisplay);
 
-  const wContainer = document.getElementById('weather-widget-container');
-  if (state.settings.showWeather) wContainer.classList.remove('hidden');
-  else wContainer.classList.add('hidden');
+  if (g_weatherWidget) {
+    if (state.settings.showWeather) g_weatherWidget.classList.remove('hidden');
+    else g_weatherWidget.classList.add('hidden');
+  }
 
-  const tContainer = document.getElementById('todo-widget-container');
-  if (state.settings.showTodo) tContainer.classList.remove('hidden');
-  else tContainer.classList.add('hidden');
+  if (g_todoWidget) {
+    if (state.settings.showTodo) g_todoWidget.classList.remove('hidden');
+    else g_todoWidget.classList.add('hidden');
+  }
 
   renderWallpapers();
   renderNotepadSettings();
@@ -1845,8 +1894,8 @@ function renderBookmarks(searchQuery = '') {
           <span class="text-sm">Add Card</span>
         </div>
       `;
-      const defaultClass = "mt-4 border-2 border-dotted border-slate-500/50 bg-transparent rounded-2xl p-5 flex items-center justify-center cursor-pointer hover:border-neon-green mb-6 opacity-0 group-hover/col:opacity-100 transition-opacity duration-300 shrink-0";
-      const formClass = "mt-4 bg-glass-bg border border-glass-border rounded-xl p-4 flex flex-col justify-center relative shadow-lg mb-6 shrink-0 w-64";
+      const defaultClass = "add-card-btn-container mt-4 border-2 border-dotted border-slate-500/50 bg-transparent rounded-2xl p-5 flex items-center justify-center cursor-pointer hover:border-neon-green mb-6 opacity-0 group-hover/col:opacity-100 transition-opacity duration-300 shrink-0";
+      const formClass = "add-card-btn-container mt-4 bg-glass-bg border border-glass-border rounded-xl p-4 flex flex-col justify-center relative shadow-lg mb-6 shrink-0 w-64";
 
       addBtn.className = defaultClass;
       addBtn.innerHTML = defaultHTML;
@@ -1913,7 +1962,12 @@ function renderBookmarks(searchQuery = '') {
 
       const afterElement = getDragAfterElement(col, e.clientY);
       if (afterElement == null) {
-        col.appendChild(dragging);
+        const addBtnContainer = col.querySelector('.add-card-btn-container');
+        if (addBtnContainer) {
+          col.insertBefore(dragging, addBtnContainer);
+        } else {
+          col.appendChild(dragging);
+        }
       } else {
         col.insertBefore(dragging, afterElement);
       }

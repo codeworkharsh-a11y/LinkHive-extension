@@ -1,7 +1,7 @@
 const supabaseClient = window.supabase.createClient(CONFIG.SUPABASE_URL, CONFIG.SUPABASE_ANON_KEY);
 
 async function signInWithGoogle() {
-  const redirectUrl = chrome.identity.getRedirectURL(); 
+  const redirectUrl = chrome.identity.getRedirectURL();
   console.log('Redirect URL for OAuth:', redirectUrl);
 
   const { data, error } = await supabaseClient.auth.signInWithOAuth({
@@ -27,18 +27,18 @@ async function signInWithGoogle() {
         let msg = chrome.runtime.lastError.message;
         if (!msg) msg = JSON.stringify(chrome.runtime.lastError);
         if (typeof msg !== 'string') msg = String(msg);
-        
+
         console.error('Auth flow error:', chrome.runtime.lastError);
-        
+
         if (msg.toLowerCase().includes('user cancel')) {
-          alert('Login window was closed.\n\nIf the window got stuck on a blank page or localhost, it means you MUST add this exact URL to your Supabase "Redirect URLs" list:\n\n' + redirectUrl + '\n\nPlease add it in Supabase -> Authentication -> URL Configuration -> Redirect URLs.');
+          console.log('Login window was closed by the user.');
         } else if (msg.toLowerCase().includes('could not be loaded')) {
           alert('Google Login failed! ' + msg + '\n\nThis usually means your Google Provider in Supabase is incomplete, disabled, or missing the Client ID/Secret. \n\nI will now open the raw login link in a new tab so you can read the exact error from Supabase.');
           window.open(data.url, '_blank');
         } else {
-          alert('Google Login failed! ' + msg + '\n\nTip: Make sure you added ' + redirectUrl + ' to the Redirect URLs in your Supabase dashboard.');
+          alert('Google Login failed! ');
         }
-        
+
         resolve(null);
         return;
       }
