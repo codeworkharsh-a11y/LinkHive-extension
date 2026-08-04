@@ -297,29 +297,8 @@ async function setLocalData(key, val) {
   });
 }
 
-async function loadData() {
-  let cloudModularData = null;
-  let cloudLegacyData = null;
-  let loggedInUser = null;
-
-  if (typeof getCurrentUser === 'function') {
-    try {
-      loggedInUser = await getCurrentUser();
-      if (loggedInUser && typeof fetchModularUserData === 'function') {
-        // Fetch modular data from all 6 tables in parallel
-        cloudModularData = await fetchModularUserData(loggedInUser.id);
-
-        // If modular tables are empty, check legacy user_data table for migration
-        if ((!cloudModularData || !cloudModularData.hasAnyData) && typeof fetchLegacyUserData === 'function') {
-          cloudLegacyData = await fetchLegacyUserData(loggedInUser.id);
-        }
-      }
-    } catch (e) {
-      console.error('[LinkHive Sync] Supabase load exception:', e);
-    }
-  }
-
-  // 1. Load Local Data First
+async function loadLocalData() {
+  // 1. Load Local Data First (0ms instant paint from disk)
   state.tabs = await getStorageData('tabs', null);
   state.cards = await getStorageData('cards', null);
   state.todos = await getStorageData('todos', DEFAULT_TODOS);
@@ -399,76 +378,6 @@ async function loadData() {
     state.bookmarks = await getStorageData('bookmarks', DEFAULT_BOOKMARKS);
   }
 
-  // 3. Granular Modular Merge from Cloud
-  if (cloudModularData && cloudModularData.hasAnyData) {
-    const { data: cData, timestamps: cTimestamps } = cloudModularData;
-
-    // Merge Bookmarks
-    if (cData.bookmarks && (cTimestamps.bookmarks || 0) >= (state.domainLastModified.bookmarks || 0)) {
-      state.bookmarks = cData.bookmarks;
-      state.domainLastModified.bookmarks = cTimestamps.bookmarks;
-    }
-    // Merge Todos
-    if (cData.todos && (cTimestamps.todos || 0) >= (state.domainLastModified.todos || 0)) {
-      state.todos = cData.todos;
-      state.domainLastModified.todos = cTimestamps.todos;
-    }
-    // Merge Notes
-    if (cData.notes && (cTimestamps.notes || 0) >= (state.domainLastModified.notes || 0)) {
-      state.notepads = cData.notes;
-      state.domainLastModified.notes = cTimestamps.notes;
-    }
-    // Merge Cards
-    if (cData.cards && (cTimestamps.cards || 0) >= (state.domainLastModified.cards || 0)) {
-      state.cards = cData.cards;
-      state.domainLastModified.cards = cTimestamps.cards;
-    }
-    // Merge Tabs
-    if (cData.tabs && (cTimestamps.tabs || 0) >= (state.domainLastModified.tabs || 0)) {
-      state.tabs = cData.tabs;
-      state.domainLastModified.tabs = cTimestamps.tabs;
-    }
-    // Merge Settings
-    if (cData.settings && (cTimestamps.settings || 0) >= (state.domainLastModified.settings || 0)) {
-      state.settings = { ...state.settings, ...cData.settings };
-      state.domainLastModified.settings = cTimestamps.settings;
-    }
-
-    // Persist merged cloud data to local storage
-    const { customWallpaper, customWallpaperType, customWallpapers, ...syncSettings } = state.settings;
-    await setMultipleStorageData({
-      lastModified: state.lastModified,
-      domainLastModified: state.domainLastModified,
-      tabs: state.tabs,
-      cards: state.cards,
-      bookmarks: state.bookmarks,
-      todos: state.todos,
-      settings: syncSettings
-    });
-    await setLocalData('notepads', state.notepads);
-
-    console.log('[LinkHive Sync] Loaded modular cloud data successfully.');
-  } else if (cloudLegacyData) {
-    // Backward compatibility: Loaded from legacy user_data snapshot
-    const cloudLastModified = cloudLegacyData.lastModified || 0;
-    if (cloudLastModified >= state.lastModified) {
-      if (cloudLegacyData.tabs) state.tabs = cloudLegacyData.tabs;
-      if (cloudLegacyData.cards) state.cards = cloudLegacyData.cards;
-      if (cloudLegacyData.todos) state.todos = cloudLegacyData.todos;
-      if (cloudLegacyData.notepads) state.notepads = cloudLegacyData.notepads;
-      if (cloudLegacyData.bookmarks) state.bookmarks = cloudLegacyData.bookmarks;
-      state.lastModified = cloudLastModified;
-      Object.keys(state.domainLastModified).forEach(k => {
-        state.domainLastModified[k] = cloudLastModified;
-      });
-
-      // Auto-migrate legacy snapshot to modular tables
-      console.log('[LinkHive Sync] Auto-migrating legacy snapshot to modular tables...');
-      ['bookmarks', 'todos', 'notes', 'cards', 'tabs', 'settings'].forEach(d => pendingCloudSyncDomains.add(d));
-      debouncedSupabaseSync();
-    }
-  }
-
   let customWall = null;
   let customWallType = null;
   if (typeof chrome !== 'undefined' && chrome.storage) {
@@ -489,6 +398,140 @@ async function loadData() {
     state.settings.customWallpaper = customWall;
     state.settings.customWallpaperType = customWallType || 'image';
     state.settings.wallpaper = state.settings.customWallpaperType === 'video' ? 'transparent' : `url(${customWall})`;
+  }
+}
+
+// Background Cloud Synchronization (non-blocking, checks Supabase and silently merges newer changes)
+async function syncCloudData(triggerUIRefresh = true) {
+  if (typeof getCurrentUser !== 'function') return false;
+
+  try {
+    const loggedInUser = await getCurrentUser();
+    if (!loggedInUser || typeof fetchModularUserData !== 'function') return false;
+
+    let cloudModularData = await fetchModularUserData(loggedInUser.id);
+    let cloudLegacyData = null;
+
+    if ((!cloudModularData || !cloudModularData.hasAnyData) && typeof fetchLegacyUserData === 'function') {
+      cloudLegacyData = await fetchLegacyUserData(loggedInUser.id);
+    }
+
+    let hasChanges = false;
+
+    // Granular Modular Merge from Cloud
+    if (cloudModularData && cloudModularData.hasAnyData) {
+      const { data: cData, timestamps: cTimestamps } = cloudModularData;
+
+      // Merge Bookmarks
+      if (cData.bookmarks && (cTimestamps.bookmarks || 0) > (state.domainLastModified.bookmarks || 0)) {
+        state.bookmarks = cData.bookmarks;
+        state.domainLastModified.bookmarks = cTimestamps.bookmarks;
+        hasChanges = true;
+      }
+      // Merge Todos
+      if (cData.todos && (cTimestamps.todos || 0) > (state.domainLastModified.todos || 0)) {
+        state.todos = cData.todos;
+        state.domainLastModified.todos = cTimestamps.todos;
+        hasChanges = true;
+      }
+      // Merge Notes
+      if (cData.notes && (cTimestamps.notes || 0) > (state.domainLastModified.notes || 0)) {
+        state.notepads = cData.notes;
+        state.domainLastModified.notes = cTimestamps.notes;
+        hasChanges = true;
+      }
+      // Merge Cards
+      if (cData.cards && (cTimestamps.cards || 0) > (state.domainLastModified.cards || 0)) {
+        state.cards = cData.cards;
+        state.domainLastModified.cards = cTimestamps.cards;
+        hasChanges = true;
+      }
+      // Merge Tabs
+      if (cData.tabs && (cTimestamps.tabs || 0) > (state.domainLastModified.tabs || 0)) {
+        state.tabs = cData.tabs;
+        state.domainLastModified.tabs = cTimestamps.tabs;
+        hasChanges = true;
+      }
+      // Merge Settings
+      if (cData.settings && (cTimestamps.settings || 0) > (state.domainLastModified.settings || 0)) {
+        state.settings = { ...state.settings, ...cData.settings };
+        state.domainLastModified.settings = cTimestamps.settings;
+        hasChanges = true;
+      }
+
+      if (hasChanges) {
+        const { customWallpaper, customWallpaperType, customWallpapers, ...syncSettings } = state.settings;
+        await setMultipleStorageData({
+          lastModified: state.lastModified,
+          domainLastModified: state.domainLastModified,
+          tabs: state.tabs,
+          cards: state.cards,
+          bookmarks: state.bookmarks,
+          todos: state.todos,
+          settings: syncSettings
+        });
+        await setLocalData('notepads', state.notepads);
+        console.log('[LinkHive Sync] Merged newer cloud data into local storage.');
+
+        if (triggerUIRefresh) {
+          applyTheme(false);
+          renderNav();
+          renderBookmarks(document.getElementById('search-input')?.value || '');
+          renderTodos();
+          syncUI();
+        }
+      }
+    } else if (cloudLegacyData) {
+      const cloudLastModified = cloudLegacyData.lastModified || 0;
+      if (cloudLastModified > (state.lastModified || 0)) {
+        if (cloudLegacyData.tabs) state.tabs = cloudLegacyData.tabs;
+        if (cloudLegacyData.cards) state.cards = cloudLegacyData.cards;
+        if (cloudLegacyData.todos) state.todos = cloudLegacyData.todos;
+        if (cloudLegacyData.notepads) state.notepads = cloudLegacyData.notepads;
+        if (cloudLegacyData.bookmarks) state.bookmarks = cloudLegacyData.bookmarks;
+        state.lastModified = cloudLastModified;
+        Object.keys(state.domainLastModified).forEach(k => {
+          state.domainLastModified[k] = cloudLastModified;
+        });
+
+        const { customWallpaper, customWallpaperType, customWallpapers, ...syncSettings } = state.settings;
+        await setMultipleStorageData({
+          lastModified: state.lastModified,
+          domainLastModified: state.domainLastModified,
+          tabs: state.tabs,
+          cards: state.cards,
+          bookmarks: state.bookmarks,
+          todos: state.todos,
+          settings: syncSettings
+        });
+        await setLocalData('notepads', state.notepads);
+
+        console.log('[LinkHive Sync] Auto-migrating legacy snapshot to modular tables...');
+        ['bookmarks', 'todos', 'notes', 'cards', 'tabs', 'settings'].forEach(d => pendingCloudSyncDomains.add(d));
+        debouncedSupabaseSync();
+
+        if (triggerUIRefresh) {
+          applyTheme(false);
+          renderNav();
+          renderBookmarks(document.getElementById('search-input')?.value || '');
+          renderTodos();
+          syncUI();
+        }
+      }
+    }
+    return hasChanges;
+  } catch (e) {
+    console.error('[LinkHive Sync] Background cloud sync error:', e);
+    return false;
+  }
+}
+
+async function loadData(waitForCloud = false) {
+  await loadLocalData();
+  if (waitForCloud) {
+    await syncCloudData(false);
+  } else {
+    syncCloudData(true).catch(e => console.error('[LinkHive Sync] Background sync error:', e));
   }
 }
 
@@ -3782,7 +3825,7 @@ function initCalendar() {
 }
 
 async function init() {
-  await loadData();
+  await loadLocalData();
   applyTheme(false);
   syncUI();
   renderNav();
@@ -3792,7 +3835,10 @@ async function init() {
   fetchWeather();
   startClock();
   initCalendar();
-  await syncAccountUI();
+
+  // Non-blocking background tasks
+  syncAccountUI().catch(e => console.error('[LinkHive Sync] Background account UI error:', e));
+  syncCloudData(true).catch(e => console.error('[LinkHive Sync] Background cloud sync error:', e));
 
   // Attach Welcome Modal listeners unconditionally so they work if opened from Settings
   const modal = document.getElementById('cloud-sync-modal');
@@ -3821,7 +3867,7 @@ async function init() {
         hideWelcomeModal();
         await setLocalData('hasSeenWelcome', true);
         
-        await loadData();
+        await loadData(true);
         applyTheme(false);
         renderNav();
         renderBookmarks();
@@ -3832,16 +3878,18 @@ async function init() {
     };
   }
 
-  // Check for first-time login
-  const hasSeenWelcome = await getLocalData('hasSeenWelcome', false);
-  if (!hasSeenWelcome && typeof getCurrentUser === 'function') {
-    const user = await getCurrentUser();
-    if (!user && modal) {
-      showWelcomeModal();
-    } else if (user) {
-      await setLocalData('hasSeenWelcome', true);
+  // Check for first-time login (non-blocking)
+  (async () => {
+    const hasSeenWelcome = await getLocalData('hasSeenWelcome', false);
+    if (!hasSeenWelcome && typeof getCurrentUser === 'function') {
+      const user = await getCurrentUser();
+      if (!user && modal) {
+        showWelcomeModal();
+      } else if (user) {
+        await setLocalData('hasSeenWelcome', true);
+      }
     }
-  }
+  })().catch(e => console.error(e));
 
   // Listen for storage changes from background script (e.g. quick save)
   // so the new tab page auto-refreshes without needing a reload

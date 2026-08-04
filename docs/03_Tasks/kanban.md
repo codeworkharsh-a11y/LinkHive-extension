@@ -14,3 +14,4 @@
 - [x] Fix neon accent color persistence on extension reload (prevent auto-extraction override on startup)
 - [x] Implement customizable tab button style option (Capsule vs. Rounded Rectangle)
 - [x] Implement per-tab visibility choice for Notepad widgets (Weather, Todo, Calendar stay on Home tab only)
+- [x] Optimize startup performance to instant 0ms local-first paint with non-blocking background cloud sync
