@@ -402,7 +402,7 @@ async function loadLocalData() {
 }
 
 // Background Cloud Synchronization (non-blocking, checks Supabase and silently merges newer changes)
-async function syncCloudData(triggerUIRefresh = true) {
+async function syncCloudData(triggerUIRefresh = true, forcePull = false) {
   if (typeof getCurrentUser !== 'function') return false;
 
   try {
@@ -423,37 +423,37 @@ async function syncCloudData(triggerUIRefresh = true) {
       const { data: cData, timestamps: cTimestamps } = cloudModularData;
 
       // Merge Bookmarks
-      if (cData.bookmarks && (cTimestamps.bookmarks || 0) > (state.domainLastModified.bookmarks || 0)) {
+      if (cData.bookmarks && (forcePull || (cTimestamps.bookmarks || 0) >= (state.domainLastModified.bookmarks || 0))) {
         state.bookmarks = cData.bookmarks;
         state.domainLastModified.bookmarks = cTimestamps.bookmarks;
         hasChanges = true;
       }
       // Merge Todos
-      if (cData.todos && (cTimestamps.todos || 0) > (state.domainLastModified.todos || 0)) {
+      if (cData.todos && (forcePull || (cTimestamps.todos || 0) >= (state.domainLastModified.todos || 0))) {
         state.todos = cData.todos;
         state.domainLastModified.todos = cTimestamps.todos;
         hasChanges = true;
       }
       // Merge Notes
-      if (cData.notes && (cTimestamps.notes || 0) > (state.domainLastModified.notes || 0)) {
+      if (cData.notes && (forcePull || (cTimestamps.notes || 0) >= (state.domainLastModified.notes || 0))) {
         state.notepads = cData.notes;
         state.domainLastModified.notes = cTimestamps.notes;
         hasChanges = true;
       }
       // Merge Cards
-      if (cData.cards && (cTimestamps.cards || 0) > (state.domainLastModified.cards || 0)) {
+      if (cData.cards && (forcePull || (cTimestamps.cards || 0) >= (state.domainLastModified.cards || 0))) {
         state.cards = cData.cards;
         state.domainLastModified.cards = cTimestamps.cards;
         hasChanges = true;
       }
       // Merge Tabs
-      if (cData.tabs && (cTimestamps.tabs || 0) > (state.domainLastModified.tabs || 0)) {
+      if (cData.tabs && (forcePull || (cTimestamps.tabs || 0) >= (state.domainLastModified.tabs || 0))) {
         state.tabs = cData.tabs;
         state.domainLastModified.tabs = cTimestamps.tabs;
         hasChanges = true;
       }
       // Merge Settings
-      if (cData.settings && (cTimestamps.settings || 0) > (state.domainLastModified.settings || 0)) {
+      if (cData.settings && (forcePull || (cTimestamps.settings || 0) >= (state.domainLastModified.settings || 0))) {
         state.settings = { ...state.settings, ...cData.settings };
         state.domainLastModified.settings = cTimestamps.settings;
         hasChanges = true;
@@ -483,7 +483,7 @@ async function syncCloudData(triggerUIRefresh = true) {
       }
     } else if (cloudLegacyData) {
       const cloudLastModified = cloudLegacyData.lastModified || 0;
-      if (cloudLastModified > (state.lastModified || 0)) {
+      if (cloudLastModified >= (state.lastModified || 0)) {
         if (cloudLegacyData.tabs) state.tabs = cloudLegacyData.tabs;
         if (cloudLegacyData.cards) state.cards = cloudLegacyData.cards;
         if (cloudLegacyData.todos) state.todos = cloudLegacyData.todos;
@@ -526,12 +526,12 @@ async function syncCloudData(triggerUIRefresh = true) {
   }
 }
 
-async function loadData(waitForCloud = false) {
+async function loadData(waitForCloud = false, forcePull = false) {
   await loadLocalData();
   if (waitForCloud) {
-    await syncCloudData(false);
+    await syncCloudData(false, forcePull);
   } else {
-    syncCloudData(true).catch(e => console.error('[LinkHive Sync] Background sync error:', e));
+    syncCloudData(true, forcePull).catch(e => console.error('[LinkHive Sync] Background sync error:', e));
   }
 }
 
@@ -3867,7 +3867,7 @@ async function init() {
         hideWelcomeModal();
         await setLocalData('hasSeenWelcome', true);
         
-        await loadData(true);
+        await loadData(true, true); // wait for cloud, force pull
         applyTheme(false);
         renderNav();
         renderBookmarks();
