@@ -271,3 +271,15 @@ body.theme-light .favicon-wrapper img.smart-favicon-light {
   filter: invert(1) brightness(0.2) drop-shadow(0 0 1px rgba(0, 0, 0, 0.2)) !important;
 }
 
+/* Custom Select styling to remove browser default dropdown arrows */
+.np-tab-select {
+  -webkit-appearance: none !important;
+  -moz-appearance: none !important;
+  appearance: none !important;
+  background-image: none !important;
+}
+.np-tab-select::-ms-expand {
+  display: none !important;
+}
+
+

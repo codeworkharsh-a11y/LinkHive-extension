@@ -28,6 +28,7 @@ const DEFAULT_SETTINGS = {
   showTodo: true,
   showCalendar: true,
   activeTab: 'tab-home',
+  tabStyle: 'capsule',
   compactMode: false,
   groupTools: false,
   hideExtraBookmarks: false,
@@ -359,12 +360,18 @@ async function loadData() {
         name: 'Notepad',
         text: state.notepadText || '',
         show: state.settings.showNotepad ?? true,
+        tabId: 'tab-home',
         pos: state.settings.notepadPos || { colIndex: 0, order: -3 }
       });
       delete state.notepadText;
       delete state.settings.showNotepad;
       delete state.settings.notepadPos;
     }
+  } else {
+    // Ensure all notepads have a tabId
+    state.notepads.forEach(n => {
+      if (!n.tabId) n.tabId = 'tab-home';
+    });
   }
 
   if (!state.tabs) {
@@ -930,6 +937,20 @@ function syncUI() {
   document.getElementById('toggle-open-new-tab').checked = state.settings.openNewTab;
   document.getElementById('toggle-show-descriptions').checked = state.settings.showDescriptions;
   document.getElementById('toggle-privacy-hide').checked = !!state.settings.privacyHide;
+
+  // Tab Style UI Sync
+  const isRoundedTab = state.settings.tabStyle === 'rounded';
+  const capsuleBtn = document.getElementById('tab-style-capsule');
+  const roundedBtn = document.getElementById('tab-style-rounded');
+  if (capsuleBtn && roundedBtn) {
+    if (isRoundedTab) {
+      roundedBtn.className = 'px-3 py-1.5 text-xs font-medium rounded-lg transition-all text-white bg-slate-700/80 shadow-sm flex items-center gap-1.5';
+      capsuleBtn.className = 'px-3 py-1.5 text-xs font-medium rounded-lg transition-all text-slate-400 hover:text-slate-200 flex items-center gap-1.5';
+    } else {
+      capsuleBtn.className = 'px-3 py-1.5 text-xs font-medium rounded-lg transition-all text-white bg-slate-700/80 shadow-sm flex items-center gap-1.5';
+      roundedBtn.className = 'px-3 py-1.5 text-xs font-medium rounded-lg transition-all text-slate-400 hover:text-slate-200 flex items-center gap-1.5';
+    }
+  }
   
   // Dynamically populate quick save destination dropdown with all tabs
   const quickSaveSelect = document.getElementById('select-quick-save-dest');
@@ -987,27 +1008,81 @@ function renderNotepadSettings() {
   if (!list) return;
   list.innerHTML = '';
 
-  state.notepads.forEach((notepad) => {
-    const item = document.createElement('div');
-    item.className = 'flex items-center justify-between bg-slate-800/30 p-2 rounded-lg border border-slate-700/50 group';
-
-    item.innerHTML = `
-      <div class="flex items-center gap-2 flex-1 min-w-0 mr-3">
-        <label class="relative inline-block w-[36px] h-[20px] shrink-0">
-          <input type="checkbox" class="opacity-0 w-0 h-0 peer np-toggle" ${notepad.show ? 'checked' : ''}>
-          <span class="absolute cursor-pointer inset-0 bg-slate-700 border border-slate-500 peer-checked:border-neon-green transition-all duration-300 rounded-full before:absolute before:content-[''] before:h-[14px] before:w-[14px] before:left-[2px] before:bottom-[2px] before:bg-white before:transition-all before:duration-300 before:rounded-full before:shadow-[0_2px_4px_rgba(0,0,0,0.2)] peer-checked:bg-neon-green peer-focus:shadow-[0_0_1px_var(--neon-hex)] peer-checked:before:translate-x-[16px]"></span>
-        </label>
-        <span class="text-sm text-slate-300 truncate cursor-pointer hover:text-white transition-colors np-name" title="Click to rename">${notepad.name}</span>
-      </div>
-      <div class="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-        <button class="text-slate-500 hover:text-white p-1 rounded-md np-rename" title="Rename Notepad">
-          <span class="material-symbols-outlined text-[16px]">edit</span>
-        </button>
-        <button class="text-slate-500 hover:text-red-400 p-1 rounded-md np-delete" title="Delete Notepad">
-          <span class="material-symbols-outlined text-[16px]">delete</span>
-        </button>
+  if (!state.notepads || state.notepads.length === 0) {
+    list.innerHTML = `
+      <div class="text-center py-6 px-4 border border-dashed border-slate-700/60 rounded-xl bg-slate-900/30">
+        <span class="material-symbols-outlined text-slate-500 text-3xl mb-1">note_stack</span>
+        <p class="text-xs text-slate-400 font-medium">No notepads created yet</p>
+        <p class="text-[11px] text-slate-500 mt-0.5">Click "+ Add Notepad" above to create one on any tab.</p>
       </div>
     `;
+    return;
+  }
+
+  state.notepads.forEach((notepad) => {
+    if (!notepad.tabId) {
+      notepad.tabId = state.tabs[0]?.id || 'tab-home';
+    }
+
+    const currentTab = state.tabs.find(t => t.id === notepad.tabId) || state.tabs[0];
+    const tabName = currentTab ? currentTab.name : 'Home';
+
+    const item = document.createElement('div');
+    item.className = 'flex items-center justify-between bg-slate-900/60 hover:bg-slate-900/90 border border-slate-700/50 hover:border-slate-600/80 rounded-xl px-3.5 py-3 transition-all duration-200 group';
+
+    item.innerHTML = `
+      <div class="flex items-center gap-3 min-w-0 flex-1 pr-3">
+        <label class="relative inline-block w-[38px] h-[22px] shrink-0">
+          <input type="checkbox" class="opacity-0 w-0 h-0 peer np-toggle" ${notepad.show ? 'checked' : ''}>
+          <span class="absolute cursor-pointer inset-0 bg-slate-700 border border-slate-500 peer-checked:border-neon-green transition-all duration-300 rounded-full before:absolute before:content-[''] before:h-[16px] before:w-[16px] before:left-[2px] before:bottom-[2px] before:bg-white before:transition-all before:duration-300 before:rounded-full before:shadow-[0_2px_4px_rgba(0,0,0,0.2)] peer-checked:bg-neon-green peer-focus:shadow-[0_0_1px_var(--neon-hex)] peer-checked:before:translate-x-[16px]"></span>
+        </label>
+        <div class="flex flex-col min-w-0">
+          <div class="flex items-center gap-1.5 group/name cursor-pointer np-name-wrap">
+            <span class="text-sm font-semibold text-slate-200 truncate group-hover/name:text-neon-green transition-colors np-name" title="Click to rename">${notepad.name}</span>
+            <span class="material-symbols-outlined text-[13px] text-slate-500 group-hover/name:text-neon-green opacity-0 group-hover/name:opacity-100 transition-all">edit</span>
+          </div>
+          <span class="text-[11px] text-slate-400 mt-0.5 truncate np-tab-badge">Visible on <span class="text-slate-300 font-medium np-tab-name">${tabName}</span></span>
+        </div>
+      </div>
+
+      <div class="flex items-center gap-2 shrink-0">
+        <div class="relative flex items-center">
+          <span class="material-symbols-outlined text-[15px] text-slate-400 absolute left-2.5 pointer-events-none">folder_open</span>
+          <select class="np-tab-select bg-slate-800 hover:bg-slate-700/80 border border-slate-700/80 hover:border-slate-500 focus:border-neon-green text-xs font-medium text-slate-200 pl-8 pr-8 py-1.5 rounded-lg outline-none cursor-pointer transition-all focus:ring-1 focus:ring-neon-green/30">
+          </select>
+          <span class="material-symbols-outlined text-[16px] text-slate-400 absolute right-2 pointer-events-none">expand_more</span>
+        </div>
+
+        <div class="flex items-center gap-0.5">
+          <button class="text-slate-400 hover:text-white hover:bg-slate-800 p-1.5 rounded-lg transition-colors np-rename" title="Rename Notepad">
+            <span class="material-symbols-outlined text-[17px]">edit</span>
+          </button>
+          <button class="text-slate-400 hover:text-red-400 hover:bg-red-500/10 p-1.5 rounded-lg transition-colors np-delete" title="Delete Notepad">
+            <span class="material-symbols-outlined text-[17px]">delete</span>
+          </button>
+        </div>
+      </div>
+    `;
+
+    // Populate Tab options
+    const tabSelect = item.querySelector('.np-tab-select');
+    const tabBadge = item.querySelector('.np-tab-name');
+    state.tabs.forEach(t => {
+      const opt = document.createElement('option');
+      opt.value = t.id;
+      opt.textContent = t.name;
+      opt.className = 'bg-slate-900 text-slate-200';
+      tabSelect.appendChild(opt);
+    });
+    tabSelect.value = notepad.tabId;
+
+    tabSelect.addEventListener('change', async (e) => {
+      notepad.tabId = e.target.value;
+      const matched = state.tabs.find(t => t.id === notepad.tabId);
+      if (tabBadge && matched) tabBadge.textContent = matched.name;
+      await saveData('notes');
+      renderBookmarks(document.getElementById('search-input').value);
+    });
 
     // Toggle
     item.querySelector('.np-toggle').addEventListener('change', async (e) => {
@@ -1026,7 +1101,7 @@ function renderNotepadSettings() {
         renderBookmarks(document.getElementById('search-input').value);
       }
     };
-    item.querySelector('.np-name').addEventListener('click', handleRename);
+    item.querySelector('.np-name-wrap').addEventListener('click', handleRename);
     item.querySelector('.np-rename').addEventListener('click', handleRename);
 
     // Delete
@@ -1068,15 +1143,28 @@ function renderNav() {
   const container = document.getElementById('nav-container');
   container.innerHTML = '';
 
+  const isRounded = state.settings.tabStyle === 'rounded';
+  const radiusClass = isRounded ? 'rounded-xl' : 'rounded-full';
+
+  // Update left/right scroll button radius
+  const leftBtn = document.getElementById('nav-scroll-left');
+  const rightBtn = document.getElementById('nav-scroll-right');
+  if (leftBtn && rightBtn) {
+    leftBtn.classList.remove('rounded-full', 'rounded-xl');
+    rightBtn.classList.remove('rounded-full', 'rounded-xl');
+    leftBtn.classList.add(radiusClass);
+    rightBtn.classList.add(radiusClass);
+  }
+
   state.tabs.forEach(tab => {
     const wrap = document.createElement('div');
     wrap.className = 'relative flex-shrink-0';
 
     const isActive = state.settings.activeTab === tab.id;
 
-    // Main tab pill
+    // Main tab button
     const btn = document.createElement('button');
-    btn.className = 'px-5 py-2 rounded-full text-sm font-semibold transition-all duration-300 cursor-pointer flex items-center justify-center border outline-none whitespace-nowrap min-w-[60px]';
+    btn.className = `px-5 py-2 ${radiusClass} text-sm font-semibold transition-all duration-300 cursor-pointer flex items-center justify-center border outline-none whitespace-nowrap min-w-[60px]`;
 
     if (isActive) {
       btn.style.backgroundColor = 'var(--neon-hex)';
@@ -1250,8 +1338,17 @@ function renderNav() {
               state.cards = state.cards.filter(c => c.tabId !== tab.id);
               const ids = new Set(state.cards.map(c => c.id));
               state.bookmarks = state.bookmarks.filter(b => ids.has(b.cardId));
-              if (state.settings.activeTab === tab.id) state.settings.activeTab = state.tabs[0].id;
-              await saveData(['tabs', 'cards', 'bookmarks', 'settings']); renderNav(); renderBookmarks();
+              const fallbackTabId = state.tabs[0]?.id || 'tab-home';
+              state.notepads.forEach(n => {
+                if (n.tabId === tab.id) {
+                  n.tabId = fallbackTabId;
+                }
+              });
+              if (state.settings.activeTab === tab.id) state.settings.activeTab = fallbackTabId;
+              await saveData(['tabs', 'cards', 'bookmarks', 'settings', 'notes']);
+              renderNav();
+              renderBookmarks();
+              renderNotepadSettings();
             }
           }));
         }
@@ -1269,9 +1366,9 @@ function renderNav() {
     container.appendChild(wrap);
   });
 
-  // "+" add tab pill — same height as tabs
+  // "+" add tab button — same height and radius as tabs
   const addBtn = document.createElement('button');
-  addBtn.className = 'px-3 py-2 rounded-full flex-shrink-0 flex items-center justify-center cursor-pointer border outline-none transition-all duration-200';
+  addBtn.className = `px-3 py-2 ${radiusClass} flex-shrink-0 flex items-center justify-center cursor-pointer border outline-none transition-all duration-200`;
   addBtn.style.cssText = 'background:rgba(30,41,59,0.6); color:#94a3b8; border-color:rgba(51,65,85,0.6);';
   addBtn.innerHTML = '<span class="material-symbols-outlined text-[18px]">add</span>';
   addBtn.onmouseenter = () => { addBtn.style.color = 'var(--neon-hex)'; addBtn.style.borderColor = 'var(--neon-hex)'; addBtn.style.background = 'rgba(30,41,59,0.8)'; };
@@ -1322,6 +1419,7 @@ function renderNav() {
       await saveData(['tabs', 'settings']);
       renderNav();
       renderBookmarks();
+      renderNotepadSettings();
       modal.remove();
     };
 
@@ -1409,11 +1507,12 @@ function renderBookmarks(searchQuery = '') {
 
   state.notepads.forEach(notepad => {
     if (notepad.show) {
+      const targetTabId = notepad.tabId || state.tabs[0]?.id || 'tab-home';
       if (q) {
         const match = notepad.name.toLowerCase().includes(q) || (notepad.text && notepad.text.toLowerCase().includes(q));
         if (!match) return;
-      } else if (state.settings.activeTab !== 'tab-home') {
-        return; // Only show on home tab when not searching
+      } else if (state.settings.activeTab !== targetTabId) {
+        return; // Only show on its assigned tab when not searching
       }
       const npEl = document.createElement('div');
       npEl.className = 'break-inside-avoid bg-glass-bg !backdrop-blur-[var(--glass-blur)] border border-glass-border rounded-2xl transition-[transform,box-shadow,border-color,backdrop-filter] duration-200 ease-in hover:border-glass-border-hover hover:shadow-glass-hover p-5 mb-3 group/card draggable-card cursor-grab active:cursor-grabbing flex flex-col';
@@ -2733,11 +2832,13 @@ function initSettings() {
   document.getElementById('add-notepad-btn').onclick = async () => {
     const name = prompt('Enter notepad name:', 'New Notepad');
     if (name && name.trim()) {
+      const activeTabId = state.settings.activeTab || (state.tabs[0]?.id || 'tab-home');
       state.notepads.push({
         id: 'notepad-' + uuid(),
         name: name.trim(),
         text: '',
         show: true,
+        tabId: activeTabId,
         pos: { colIndex: 0, order: -3 }
       });
       await saveData('notes');
@@ -2772,6 +2873,28 @@ function initSettings() {
       }
     };
   });
+
+  // Tab button style selector (Capsule vs Rounded Rectangle)
+  const capsuleStyleBtn = document.getElementById('tab-style-capsule');
+  const roundedStyleBtn = document.getElementById('tab-style-rounded');
+  if (capsuleStyleBtn && roundedStyleBtn) {
+    capsuleStyleBtn.onclick = async () => {
+      if (state.settings.tabStyle !== 'capsule') {
+        state.settings.tabStyle = 'capsule';
+        await saveData('settings');
+        syncUI();
+        renderNav();
+      }
+    };
+    roundedStyleBtn.onclick = async () => {
+      if (state.settings.tabStyle !== 'rounded') {
+        state.settings.tabStyle = 'rounded';
+        await saveData('settings');
+        syncUI();
+        renderNav();
+      }
+    };
+  }
 
   document.getElementById('select-quick-save-dest').onchange = async (e) => {
     state.settings.quickSaveDest = e.target.value;

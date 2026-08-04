@@ -249,6 +249,25 @@
             <div>
               <h3 class="text-xs font-bold text-slate-500 mb-3 tracking-wider uppercase">Appearance</h3>
               <div class="space-y-0 bg-slate-800 border border-slate-800 rounded-xl overflow-hidden">
+                <!-- Tab button style -->
+                <div class="flex justify-between items-center p-4 hover:bg-white/[0.02] transition-colors border-b border-slate-800">
+                  <div>
+                    <div class="text-slate-200 text-sm font-medium">Tab button style</div>
+                    <div class="text-slate-500 text-xs mt-0.5">Switch between capsule pills and rounded rectangular tabs.</div>
+                  </div>
+                  <div class="flex bg-slate-900/80 p-1 rounded-xl border border-slate-700/60" id="tab-style-selector">
+                    <button type="button" data-style="capsule" id="tab-style-capsule"
+                      class="px-3 py-1.5 text-xs font-medium rounded-lg transition-all text-white bg-slate-700/80 shadow-sm flex items-center gap-1.5">
+                      <span class="w-3.5 h-2 rounded-full border border-current"></span>
+                      Capsule
+                    </button>
+                    <button type="button" data-style="rounded" id="tab-style-rounded"
+                      class="px-3 py-1.5 text-xs font-medium rounded-lg transition-all text-slate-400 hover:text-slate-200 flex items-center gap-1.5">
+                      <span class="w-3.5 h-2 rounded-sm border border-current"></span>
+                      Rounded
+                    </button>
+                  </div>
+                </div>
                 <!-- Compact mode -->
                 <div
                   class="flex justify-between items-center p-4 hover:bg-white/[0.02] transition-colors border-b border-slate-800">
@@ -577,14 +596,14 @@
                   <div class="flex items-center justify-between">
                     <div>
                       <div class="text-sm font-semibold text-slate-200 flex items-center gap-2">
-                        <span class="material-symbols-outlined text-neon-green text-lg">description</span> Notepad
+                        <span class="material-symbols-outlined text-neon-green text-lg">edit_note</span> Notepad
                         Widgets
                       </div>
-                      <div class="text-xs text-slate-400 mt-0.5">Create and manage multiple quick notes and scratchpads.
+                      <div class="text-xs text-slate-400 mt-0.5">Create and manage quick notes and assign them to specific tabs.
                       </div>
                     </div>
                     <button id="add-notepad-btn"
-                      class="text-neon-green hover:text-green-400 text-xs font-semibold bg-neon-green/10 hover:bg-neon-green/20 px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1 border border-neon-green/30 shrink-0">
+                      class="text-neon-green hover:text-green-400 text-xs font-semibold bg-neon-green/10 hover:bg-neon-green/20 px-3.5 py-1.5 rounded-lg transition-colors flex items-center gap-1.5 border border-neon-green/30 shrink-0 shadow-sm">
                       <span class="material-symbols-outlined text-[16px]">add</span> Add Notepad
                     </button>
                   </div>
