@@ -4,7 +4,9 @@
   "main": "index.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "build:css": "npx tailwindcss -i ./input.css -o ./style.css"
+    "build:css": "npx tailwindcss -i ./input.css -o ./style.css",
+    "build:zip": "node build-zip.js",
+    "build": "npm run build:css && npm run build:zip"
   },
   "keywords": [],
   "author": "",

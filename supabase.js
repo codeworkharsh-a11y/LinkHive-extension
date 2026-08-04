@@ -102,3 +102,116 @@ async function getCurrentUser() {
   const { data: { session } } = await supabaseClient.auth.getSession();
   return session ? session.user : null;
 }
+
+// Modular Sync Tables
+const SYNC_TABLES = {
+  BOOKMARKS: 'user_bookmarks',
+  TODOS: 'user_todos',
+  NOTES: 'user_notes',
+  CARDS: 'user_cards',
+  TABS: 'user_tabs',
+  SETTINGS: 'user_settings'
+};
+
+/**
+ * Fetch all modular user data in parallel from individual Supabase tables.
+ * Returns an object containing the data and updated_at timestamps for each domain.
+ */
+async function fetchModularUserData(userId) {
+  if (!userId || !supabaseClient) return null;
+
+  const tableKeys = [
+    { key: 'bookmarks', table: SYNC_TABLES.BOOKMARKS },
+    { key: 'todos', table: SYNC_TABLES.TODOS },
+    { key: 'notes', table: SYNC_TABLES.NOTES },
+    { key: 'cards', table: SYNC_TABLES.CARDS },
+    { key: 'tabs', table: SYNC_TABLES.TABS },
+    { key: 'settings', table: SYNC_TABLES.SETTINGS }
+  ];
+
+  const results = await Promise.allSettled(
+    tableKeys.map(async ({ key, table }) => {
+      const { data, error } = await supabaseClient
+        .from(table)
+        .select('data, updated_at')
+        .eq('user_id', userId)
+        .maybeSingle();
+
+      if (error) {
+        console.warn(`[LinkHive Sync] Fetch warning for ${table}:`, error.message);
+        return { key, table, data: null, updatedAt: null, error };
+      }
+      return {
+        key,
+        table,
+        data: data ? data.data : null,
+        updatedAt: data && data.updated_at ? new Date(data.updated_at).getTime() : null,
+        error: null
+      };
+    })
+  );
+
+  const modularData = {};
+  const timestamps = {};
+  let hasAnyData = false;
+
+  results.forEach(res => {
+    if (res.status === 'fulfilled' && res.value) {
+      const { key, data, updatedAt } = res.value;
+      if (data !== null && data !== undefined) {
+        modularData[key] = data;
+        timestamps[key] = updatedAt;
+        hasAnyData = true;
+      }
+    }
+  });
+
+  return { hasAnyData, data: modularData, timestamps };
+}
+
+/**
+ * Fetch data from the legacy single-row 'user_data' table (for backward compatibility / auto-migration)
+ */
+async function fetchLegacyUserData(userId) {
+  if (!userId || !supabaseClient) return null;
+  try {
+    const { data, error } = await supabaseClient
+      .from('user_data')
+      .select('data')
+      .eq('user_id', userId)
+      .maybeSingle();
+
+    if (error && error.code !== 'PGRST116') {
+      console.warn('[LinkHive Sync] Legacy user_data fetch warning:', error.message);
+    }
+    return data && data.data ? data.data : null;
+  } catch (e) {
+    console.warn('[LinkHive Sync] Legacy fetch exception:', e);
+    return null;
+  }
+}
+
+/**
+ * Upsert a single domain's data to its respective table in Supabase.
+ */
+async function upsertModularData(userId, tableName, domainData, timestamp = Date.now()) {
+  if (!userId || !supabaseClient) return { success: false, error: 'No user or client' };
+
+  const payload = {
+    user_id: userId,
+    data: domainData,
+    updated_at: new Date(timestamp).toISOString()
+  };
+
+  const { error } = await supabaseClient
+    .from(tableName)
+    .upsert(payload);
+
+  if (error) {
+    console.error(`[LinkHive Sync] Upsert failed for ${tableName}:`, error.message || error);
+    return { success: false, error };
+  }
+
+  return { success: true };
+}
+

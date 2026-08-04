@@ -74,8 +74,21 @@ let state = {
   bookmarks: [],
   todos: [],
   settings: {},
-  notepads: []
+  notepads: [],
+  lastModified: 0,
+  domainLastModified: {
+    bookmarks: 0,
+    todos: 0,
+    notes: 0,
+    cards: 0,
+    tabs: 0,
+    settings: 0
+  }
 };
+
+// Queue to track dirty domains for granular cloud sync
+const pendingCloudSyncDomains = new Set();
+
 
 // Global widget references for JS Masonry
 let g_weatherWidget = null;
@@ -284,20 +297,25 @@ async function setLocalData(key, val) {
 }
 
 async function loadData() {
-  let supabaseData = null;
+  let cloudModularData = null;
+  let cloudLegacyData = null;
+  let loggedInUser = null;
+
   if (typeof getCurrentUser === 'function') {
     try {
-      const user = await getCurrentUser();
-      if (user) {
-        const { data, error } = await supabaseClient.from('user_data').select('data').eq('user_id', user.id).single();
-        if (error) {
-          if (error.code !== 'PGRST116') { // PGRST116 is "No rows found" which is fine for new users
-            console.error('Supabase select error:', error);
-          }
+      loggedInUser = await getCurrentUser();
+      if (loggedInUser && typeof fetchModularUserData === 'function') {
+        // Fetch modular data from all 6 tables in parallel
+        cloudModularData = await fetchModularUserData(loggedInUser.id);
+
+        // If modular tables are empty, check legacy user_data table for migration
+        if ((!cloudModularData || !cloudModularData.hasAnyData) && typeof fetchLegacyUserData === 'function') {
+          cloudLegacyData = await fetchLegacyUserData(loggedInUser.id);
         }
-        if (data && data.data) supabaseData = data.data;
       }
-    } catch(e) { console.error('Supabase load exception:', e); }
+    } catch (e) {
+      console.error('[LinkHive Sync] Supabase load exception:', e);
+    }
   }
 
   // 1. Load Local Data First
@@ -319,6 +337,18 @@ async function loadData() {
   }
   state.notepads = localNotepads;
   state.weatherCache = await getLocalData('weatherCache', null);
+
+  // Load domain timestamps (or fallback to legacy lastModified)
+  state.lastModified = await getStorageData('lastModified', 0);
+  const storedDomainTimestamps = await getStorageData('domainLastModified', null);
+  state.domainLastModified = {
+    bookmarks: storedDomainTimestamps?.bookmarks || state.lastModified || 0,
+    todos: storedDomainTimestamps?.todos || state.lastModified || 0,
+    notes: storedDomainTimestamps?.notes || state.lastModified || 0,
+    cards: storedDomainTimestamps?.cards || state.lastModified || 0,
+    tabs: storedDomainTimestamps?.tabs || state.lastModified || 0,
+    settings: storedDomainTimestamps?.settings || state.lastModified || 0
+  };
 
   // 2. Perform any needed migrations on the local data
   if (!state.notepads) {
@@ -362,20 +392,73 @@ async function loadData() {
     state.bookmarks = await getStorageData('bookmarks', DEFAULT_BOOKMARKS);
   }
 
-  state.lastModified = await getStorageData('lastModified', 0);
+  // 3. Granular Modular Merge from Cloud
+  if (cloudModularData && cloudModularData.hasAnyData) {
+    const { data: cData, timestamps: cTimestamps } = cloudModularData;
 
-  // 3. Override local data with Supabase data if logged in
-  if (supabaseData) {
-    const cloudLastModified = supabaseData.lastModified || 0;
-    
-    // Only overwrite local data if cloud data is newer or they are the same (initial sync)
+    // Merge Bookmarks
+    if (cData.bookmarks && (cTimestamps.bookmarks || 0) >= (state.domainLastModified.bookmarks || 0)) {
+      state.bookmarks = cData.bookmarks;
+      state.domainLastModified.bookmarks = cTimestamps.bookmarks;
+    }
+    // Merge Todos
+    if (cData.todos && (cTimestamps.todos || 0) >= (state.domainLastModified.todos || 0)) {
+      state.todos = cData.todos;
+      state.domainLastModified.todos = cTimestamps.todos;
+    }
+    // Merge Notes
+    if (cData.notes && (cTimestamps.notes || 0) >= (state.domainLastModified.notes || 0)) {
+      state.notepads = cData.notes;
+      state.domainLastModified.notes = cTimestamps.notes;
+    }
+    // Merge Cards
+    if (cData.cards && (cTimestamps.cards || 0) >= (state.domainLastModified.cards || 0)) {
+      state.cards = cData.cards;
+      state.domainLastModified.cards = cTimestamps.cards;
+    }
+    // Merge Tabs
+    if (cData.tabs && (cTimestamps.tabs || 0) >= (state.domainLastModified.tabs || 0)) {
+      state.tabs = cData.tabs;
+      state.domainLastModified.tabs = cTimestamps.tabs;
+    }
+    // Merge Settings
+    if (cData.settings && (cTimestamps.settings || 0) >= (state.domainLastModified.settings || 0)) {
+      state.settings = { ...state.settings, ...cData.settings };
+      state.domainLastModified.settings = cTimestamps.settings;
+    }
+
+    // Persist merged cloud data to local storage
+    const { customWallpaper, customWallpaperType, customWallpapers, ...syncSettings } = state.settings;
+    await setMultipleStorageData({
+      lastModified: state.lastModified,
+      domainLastModified: state.domainLastModified,
+      tabs: state.tabs,
+      cards: state.cards,
+      bookmarks: state.bookmarks,
+      todos: state.todos,
+      settings: syncSettings
+    });
+    await setLocalData('notepads', state.notepads);
+
+    console.log('[LinkHive Sync] Loaded modular cloud data successfully.');
+  } else if (cloudLegacyData) {
+    // Backward compatibility: Loaded from legacy user_data snapshot
+    const cloudLastModified = cloudLegacyData.lastModified || 0;
     if (cloudLastModified >= state.lastModified) {
-      if (supabaseData.tabs) state.tabs = supabaseData.tabs;
-      if (supabaseData.cards) state.cards = supabaseData.cards;
-      if (supabaseData.todos) state.todos = supabaseData.todos;
-      if (supabaseData.notepads) state.notepads = supabaseData.notepads;
-      if (supabaseData.bookmarks) state.bookmarks = supabaseData.bookmarks;
+      if (cloudLegacyData.tabs) state.tabs = cloudLegacyData.tabs;
+      if (cloudLegacyData.cards) state.cards = cloudLegacyData.cards;
+      if (cloudLegacyData.todos) state.todos = cloudLegacyData.todos;
+      if (cloudLegacyData.notepads) state.notepads = cloudLegacyData.notepads;
+      if (cloudLegacyData.bookmarks) state.bookmarks = cloudLegacyData.bookmarks;
       state.lastModified = cloudLastModified;
+      Object.keys(state.domainLastModified).forEach(k => {
+        state.domainLastModified[k] = cloudLastModified;
+      });
+
+      // Auto-migrate legacy snapshot to modular tables
+      console.log('[LinkHive Sync] Auto-migrating legacy snapshot to modular tables...');
+      ['bookmarks', 'todos', 'notes', 'cards', 'tabs', 'settings'].forEach(d => pendingCloudSyncDomains.add(d));
+      debouncedSupabaseSync();
     }
   }
 
@@ -402,12 +485,33 @@ async function loadData() {
   }
 }
 
-async function saveData() {
-  state.lastModified = Date.now();
+async function saveData(scopes) {
+  const now = Date.now();
+  state.lastModified = now;
+
+  // Normalize target domain scopes
+  const ALL_DOMAINS = ['bookmarks', 'todos', 'notes', 'cards', 'tabs', 'settings'];
+  let targetDomains = ALL_DOMAINS;
+
+  if (typeof scopes === 'string') {
+    targetDomains = [scopes === 'notepads' ? 'notes' : scopes];
+  } else if (Array.isArray(scopes) && scopes.length > 0) {
+    targetDomains = scopes.map(s => s === 'notepads' ? 'notes' : s);
+  }
+
+  // Update domain timestamps and mark domain dirty for cloud sync
+  targetDomains.forEach(domain => {
+    if (state.domainLastModified[domain] !== undefined) {
+      state.domainLastModified[domain] = now;
+    }
+    pendingCloudSyncDomains.add(domain);
+  });
+
   const { customWallpaper, customWallpaperType, customWallpapers, ...syncSettings } = state.settings;
 
   await setMultipleStorageData({
     lastModified: state.lastModified,
+    domainLastModified: state.domainLastModified,
     tabs: state.tabs,
     cards: state.cards,
     bookmarks: state.bookmarks,
@@ -417,6 +521,7 @@ async function saveData() {
 
   await setLocalData('notepads', state.notepads);
   await setLocalData('weatherCache', state.weatherCache);
+
   const toSaveLocal = { customWallpapers: customWallpapers || [] };
   if (customWallpaper) {
     toSaveLocal.customWallpaper = customWallpaper;
@@ -440,38 +545,72 @@ async function saveData() {
     }
   }
 
-  // Push to Supabase with a 10-second debounce
+  // Push dirty domains to Supabase with debounce
   debouncedSupabaseSync();
 }
 
 let supabaseSyncTimeout = null;
-function debouncedSupabaseSync() {
+function debouncedSupabaseSync(immediate = false) {
   if (supabaseSyncTimeout) clearTimeout(supabaseSyncTimeout);
-  supabaseSyncTimeout = setTimeout(async () => {
-    if (typeof getCurrentUser === 'function') {
-      try {
-        const user = await getCurrentUser();
-        if (user) {
-          const snapshot = {
-            tabs: state.tabs,
-            cards: state.cards,
-            bookmarks: state.bookmarks,
-            todos: state.todos,
-            notepads: state.notepads,
-            lastModified: state.lastModified
-          };
-          const { error } = await supabaseClient.from('user_data').upsert({ user_id: user.id, data: snapshot });
-          if (error) {
-            console.error('Supabase upsert error:', error.message || JSON.stringify(error));
-          } else {
-            console.log('Successfully synced to Supabase (debounced).');
+
+  const executeSync = async () => {
+    if (typeof getCurrentUser !== 'function' || pendingCloudSyncDomains.size === 0) return;
+
+    try {
+      const user = await getCurrentUser();
+      if (!user) return;
+
+      const domainsToSync = Array.from(pendingCloudSyncDomains);
+      const { customWallpaper, customWallpaperType, customWallpapers, ...syncSettings } = state.settings;
+
+      const domainDataMap = {
+        bookmarks: { table: SYNC_TABLES.BOOKMARKS, data: state.bookmarks },
+        todos: { table: SYNC_TABLES.TODOS, data: state.todos },
+        notes: { table: SYNC_TABLES.NOTES, data: state.notepads },
+        cards: { table: SYNC_TABLES.CARDS, data: state.cards },
+        tabs: { table: SYNC_TABLES.TABS, data: state.tabs },
+        settings: { table: SYNC_TABLES.SETTINGS, data: syncSettings }
+      };
+
+      const syncTasks = domainsToSync.map(async (domain) => {
+        const item = domainDataMap[domain];
+        if (!item) return { domain, success: true };
+
+        const timestamp = state.domainLastModified[domain] || state.lastModified || Date.now();
+        const res = await upsertModularData(user.id, item.table, item.data, timestamp);
+
+        const bytes = JSON.stringify(item.data).length;
+        return { domain, table: item.table, bytes, success: res?.success, error: res?.error };
+      });
+
+      const results = await Promise.allSettled(syncTasks);
+      let totalBytesSynced = 0;
+      const syncedTables = [];
+
+      results.forEach(res => {
+        if (res.status === 'fulfilled' && res.value) {
+          const { domain, table, bytes, success } = res.value;
+          if (success) {
+            pendingCloudSyncDomains.delete(domain);
+            totalBytesSynced += bytes || 0;
+            if (table) syncedTables.push(`${table} (${((bytes || 0) / 1024).toFixed(2)} KB)`);
           }
         }
-      } catch (e) {
-        console.error('Supabase save exception:', e);
+      });
+
+      if (syncedTables.length > 0) {
+        console.log(`[LinkHive Sync] Granular sync completed: [${syncedTables.join(', ')}] — Total: ${(totalBytesSynced / 1024).toFixed(2)} KB`);
       }
+    } catch (e) {
+      console.error('[LinkHive Sync] Cloud sync exception:', e);
     }
-  }, 10000); // 10 seconds delay
+  };
+
+  if (immediate) {
+    executeSync();
+  } else {
+    supabaseSyncTimeout = setTimeout(executeSync, 1500); // 1.5 seconds debounce
+  }
 }
 
 // Generates a random ID
@@ -501,15 +640,17 @@ function smartTitle(rawTitle, url) {
 
 // --- UI Rendering ---
 
-function applyTheme(autoUpdateColor = true) {
+function applyTheme(autoUpdateColor = false) {
   const blurVal = Number(state.settings.blur) || 0;
   document.documentElement.style.setProperty('--glass-blur-val', blurVal);
   document.documentElement.style.setProperty('--glass-blur', `${blurVal}px`);
 
   // Opacity is now handled by CSS calc() using --glass-blur-val to support theme-light overriding
 
-  document.documentElement.style.setProperty('--neon-hex', state.settings.neonHex);
-  document.documentElement.style.setProperty('--neon-rgb', state.settings.neonRgb);
+  const neonHex = state.settings.neonHex || DEFAULT_SETTINGS.neonHex || '#2f9844';
+  const neonRgb = state.settings.neonRgb || DEFAULT_SETTINGS.neonRgb || '47 152 68';
+  document.documentElement.style.setProperty('--neon-hex', neonHex);
+  document.documentElement.style.setProperty('--neon-rgb', neonRgb);
 
   const bgBlurOverlay = document.getElementById('bg-blur-overlay');
   if (bgBlurOverlay) {
@@ -871,7 +1012,7 @@ function renderNotepadSettings() {
     // Toggle
     item.querySelector('.np-toggle').addEventListener('change', async (e) => {
       notepad.show = e.target.checked;
-      await saveData();
+      await saveData('notes');
       renderBookmarks(document.getElementById('search-input').value);
     });
 
@@ -880,7 +1021,7 @@ function renderNotepadSettings() {
       const newName = prompt('Enter new name for notepad:', notepad.name);
       if (newName && newName.trim()) {
         notepad.name = newName.trim();
-        await saveData();
+        await saveData('notes');
         renderNotepadSettings();
         renderBookmarks(document.getElementById('search-input').value);
       }
@@ -892,7 +1033,7 @@ function renderNotepadSettings() {
     item.querySelector('.np-delete').addEventListener('click', async () => {
       if (confirm(`Delete notepad "${notepad.name}"? This action cannot be undone.`)) {
         state.notepads = state.notepads.filter(n => n.id !== notepad.id);
-        await saveData();
+        await saveData('notes');
         renderNotepadSettings();
         renderBookmarks(document.getElementById('search-input').value);
       }
@@ -1003,7 +1144,7 @@ function renderNav() {
       if (e.target === arrowWrap || arrowWrap.contains(e.target)) return;
       if (state.settings.activeTab !== tab.id) {
         state.settings.activeTab = tab.id;
-        await saveData();
+        await saveData('settings');
         renderNav();
         renderBookmarks();
       }
@@ -1084,7 +1225,7 @@ function renderNav() {
             }
             if (newName !== tab.name) {
               tab.name = newName;
-              await saveData();
+              await saveData('tabs');
               renderNav();
             }
             modal.remove();
@@ -1110,7 +1251,7 @@ function renderNav() {
               const ids = new Set(state.cards.map(c => c.id));
               state.bookmarks = state.bookmarks.filter(b => ids.has(b.cardId));
               if (state.settings.activeTab === tab.id) state.settings.activeTab = state.tabs[0].id;
-              await saveData(); renderNav(); renderBookmarks();
+              await saveData(['tabs', 'cards', 'bookmarks', 'settings']); renderNav(); renderBookmarks();
             }
           }));
         }
@@ -1178,7 +1319,7 @@ function renderNav() {
       const newTab = { id: uuid(), name: name };
       state.tabs.push(newTab);
       state.settings.activeTab = newTab.id;
-      await saveData();
+      await saveData(['tabs', 'settings']);
       renderNav();
       renderBookmarks();
       modal.remove();
@@ -1308,7 +1449,7 @@ function renderBookmarks(searchQuery = '') {
       textarea.addEventListener('input', async (e) => {
         autoResize();
         notepad.text = e.target.value;
-        await saveData();
+        await saveData('notes');
       });
 
       // Initial resize
@@ -1328,7 +1469,7 @@ function renderBookmarks(searchQuery = '') {
           const text = await navigator.clipboard.readText();
           textarea.value += (textarea.value ? '\n' : '') + text;
           notepad.text = textarea.value;
-          await saveData();
+          await saveData('notes');
         } catch (err) {
           console.error('Failed to read clipboard contents: ', err);
         }
@@ -1338,7 +1479,7 @@ function renderBookmarks(searchQuery = '') {
       clearBtn.addEventListener('click', async () => {
         textarea.value = '';
         notepad.text = '';
-        await saveData();
+        await saveData('notes');
       });
 
       npEl.addEventListener('dragstart', () => {
@@ -1470,7 +1611,7 @@ function renderBookmarks(searchQuery = '') {
         }
         if (newName !== card.name) {
           card.name = newName;
-          await saveData();
+          await saveData('cards');
           renderBookmarks();
         }
         modal.remove();
@@ -1489,7 +1630,7 @@ function renderBookmarks(searchQuery = '') {
       if (confirm(`Delete card '${card.name}' and all its links?`)) {
         state.cards = state.cards.filter(c => c.id !== card.id);
         state.bookmarks = state.bookmarks.filter(b => b.cardId !== card.id);
-        await saveData();
+        await saveData(['cards', 'bookmarks']);
         renderBookmarks();
       }
     };
@@ -1596,7 +1737,7 @@ function renderBookmarks(searchQuery = '') {
         };
 
         state.bookmarks.push(bm);
-        await saveData();
+        await saveData('bookmarks');
         renderBookmarks();
       };
 
@@ -1811,7 +1952,7 @@ function renderBookmarks(searchQuery = '') {
           bm.title = title;
           bm.description = desc;
 
-          await saveData();
+          await saveData('bookmarks');
           renderBookmarks();
           modal.remove();
         };
@@ -1827,7 +1968,7 @@ function renderBookmarks(searchQuery = '') {
       delBtn.onclick = async (e) => {
         e.preventDefault();
         state.bookmarks = state.bookmarks.filter(b => b.id !== bm.id);
-        await saveData();
+        await saveData('bookmarks');
         renderBookmarks(document.getElementById('search-input').value);
       };
 
@@ -1933,7 +2074,7 @@ function renderBookmarks(searchQuery = '') {
           const name = input.value.trim();
           if (name) {
             state.cards.push({ id: uuid(), name: name, tabId: state.settings.activeTab, colIndex: parseInt(col.dataset.colIndex), order: col.children.length });
-            await saveData();
+            await saveData('cards');
             renderBookmarks();
           } else {
             input.style.borderColor = '#ef4444';
@@ -1997,7 +2138,7 @@ async function showAddLinkPrompt(cardId, cardName) {
   };
 
   state.bookmarks.push(bm);
-  await saveData();
+  await saveData('bookmarks');
   renderBookmarks();
 }
 
@@ -2037,13 +2178,13 @@ function renderTodos(searchQuery = '') {
     left.onclick = async (e) => {
       if (e.target === left || e.target === span) cb.checked = !cb.checked;
       todo.completed = cb.checked;
-      await saveData();
+      await saveData('todos');
       renderTodos();
     };
     cb.onclick = (e) => e.stopPropagation();
     cb.onchange = async () => {
       todo.completed = cb.checked;
-      await saveData();
+      await saveData('todos');
       renderTodos();
     };
 
@@ -2098,7 +2239,7 @@ function renderTodos(searchQuery = '') {
         }
         if (val !== todo.text) {
           todo.text = val;
-          await saveData();
+          await saveData('todos');
         }
         renderTodos();
         modal.remove();
@@ -2118,7 +2259,7 @@ function renderTodos(searchQuery = '') {
     delBtn.onclick = async (e) => {
       e.stopPropagation();
       state.todos.splice(idx, 1);
-      await saveData();
+      await saveData('todos');
       renderTodos();
     };
 
@@ -2187,7 +2328,7 @@ document.getElementById('add-todo-btn').onclick = (e) => {
       return;
     }
     state.todos.push({ id: uuid(), text, completed: false });
-    await saveData();
+    await saveData('todos');
     renderTodos();
     modal.remove();
   };
@@ -2319,8 +2460,8 @@ function renderWallpapers() {
         state.settings.wallpaper = 'silk-wave';
         state.settings.customWallpaper = null;
         state.settings.customWallpaperType = null;
-        await saveData();
-        applyTheme();
+        await saveData('settings');
+        applyTheme(true);
         syncUI();
         renderWallpapers();
       };
@@ -2394,7 +2535,7 @@ function renderWallpapers() {
           state.settings.wallpaper = WALLPAPERS[0];
           applyTheme();
         }
-        await saveData();
+        await saveData('settings');
         renderWallpapers();
         return;
       }
@@ -2409,8 +2550,8 @@ function renderWallpapers() {
         state.settings.customWallpaper = null;
         state.settings.customWallpaperType = null;
       }
-      await saveData();
-      applyTheme();
+      await saveData('settings');
+      applyTheme(true);
       syncUI();
     };
     grid.appendChild(btn);
@@ -2536,7 +2677,7 @@ function initSettings() {
     applyTheme(false);
   };
   document.getElementById('blur-slider').onchange = async () => {
-    await saveData();
+    await saveData('settings');
   };
 
   const bgBlurSlider = document.getElementById('bg-blur-slider');
@@ -2546,7 +2687,7 @@ function initSettings() {
       applyTheme(false);
     };
     bgBlurSlider.onchange = async () => {
-      await saveData();
+      await saveData('settings');
     };
   }
 
@@ -2559,31 +2700,32 @@ function initSettings() {
   document.getElementById('color-picker').oninput = (e) => {
     const hex = e.target.value;
     state.settings.neonHex = hex;
+    state.settings.neonAccent = hex;
     state.settings.neonRgb = hexToRgb(hex);
     applyTheme(false);
     document.getElementById('color-hex').textContent = hex;
   };
   document.getElementById('color-picker').onchange = async () => {
-    await saveData();
+    await saveData('settings');
   };
 
   // Toggles
   document.getElementById('toggle-weather').onchange = async (e) => {
     state.settings.showWeather = e.target.checked;
-    await saveData();
+    await saveData('settings');
     syncUI();
     if (state.settings.showWeather) fetchWeather();
   };
 
   document.getElementById('toggle-todo').onchange = async (e) => {
     state.settings.showTodo = e.target.checked;
-    await saveData();
+    await saveData('settings');
     syncUI();
   };
 
   document.getElementById('toggle-calendar').onchange = async (e) => {
     state.settings.showCalendar = e.target.checked;
-    await saveData();
+    await saveData('settings');
     syncUI();
     renderBookmarks(document.getElementById('search-input').value);
   };
@@ -2598,7 +2740,7 @@ function initSettings() {
         show: true,
         pos: { colIndex: 0, order: -3 }
       });
-      await saveData();
+      await saveData('notes');
       renderNotepadSettings();
       renderBookmarks(document.getElementById('search-input').value);
     }
@@ -2618,7 +2760,7 @@ function initSettings() {
   genSettings.forEach(s => {
     document.getElementById(s.id).onchange = async (e) => {
       state.settings[s.key] = e.target.checked;
-      await saveData();
+      await saveData('settings');
       if (s.render) renderBookmarks(document.getElementById('search-input').value);
       
       if (s.key === 'privacyHide' && isPrivacyMode) {
@@ -2633,7 +2775,7 @@ function initSettings() {
 
   document.getElementById('select-quick-save-dest').onchange = async (e) => {
     state.settings.quickSaveDest = e.target.value;
-    await saveData();
+    await saveData('settings');
   };
 
   const btnChangeShortcut = document.getElementById('btn-change-shortcut');
@@ -2652,7 +2794,7 @@ function initSettings() {
     const city = document.getElementById('weather-city').value.trim();
     if (city) {
       state.settings.weatherCity = city;
-      await saveData();
+      await saveData('settings');
       const msg = document.getElementById('weather-msg');
       msg.classList.remove('hidden');
       setTimeout(() => msg.classList.add('hidden'), 2000);
@@ -2904,7 +3046,7 @@ function initSettings() {
       }
       extractLinks(folder.children || []);
 
-      await saveData();
+      await saveData(['tabs', 'cards', 'bookmarks']);
       renderBookmarks(document.getElementById('search-input').value);
       closeImportModal();
     };
@@ -2976,7 +3118,7 @@ function initSettings() {
             }
           }
         }
-        await saveData();
+        await saveData('settings');
         applyTheme();
         syncUI();
       };
@@ -3030,7 +3172,8 @@ async function saveDragDropOrder() {
     });
   });
 
-  await saveData();
+  await saveData(['settings', 'notes', 'cards']);
+  debouncedSupabaseSync(true);
   renderBookmarks(document.getElementById('search-input').value);
 }
 
@@ -3351,7 +3494,7 @@ async function analyzeBackgroundBrightness(src, isVideo, autoUpdateColor = true)
     }
 
     // Persist — but don't block the UI
-    saveData();
+    saveData('settings');
 
   } catch (error) {
     console.error('Error analyzing background:', error);
@@ -3406,7 +3549,7 @@ if (typeof chrome !== 'undefined' && chrome.runtime) {
           order: state.cards.filter(c => c.tabId === targetTabId).length
         };
         state.cards.push(quickSaveCard);
-        saveData();
+        saveData('cards');
         renderBookmarks();
       }
       
@@ -3517,7 +3660,7 @@ function initCalendar() {
 
 async function init() {
   await loadData();
-  applyTheme();
+  applyTheme(false);
   syncUI();
   renderNav();
   renderBookmarks();
@@ -3556,6 +3699,7 @@ async function init() {
         await setLocalData('hasSeenWelcome', true);
         
         await loadData();
+        applyTheme(false);
         renderNav();
         renderBookmarks();
         renderTodos();
@@ -3581,9 +3725,9 @@ async function init() {
   if (typeof chrome !== 'undefined' && chrome.storage) {
     let selfSaving = false;
     const origSaveData = saveData;
-    saveData = async function() {
+    saveData = async function(scopes) {
       selfSaving = true;
-      await origSaveData();
+      await origSaveData(scopes);
       // Reset after a short delay to allow storage events to propagate
       setTimeout(() => { selfSaving = false; }, 500);
     };
@@ -3598,6 +3742,7 @@ async function init() {
         // Reload data from storage and re-render
         (async () => {
           await loadData();
+          applyTheme(false);
           renderNav();
           renderBookmarks();
           syncUI();

@@ -15,8 +15,8 @@ fetchShortcut();
 window.addEventListener('focus', fetchShortcut);
 
 chrome.storage.local.get(['settings'], (res) => {
-  if (res.settings && res.settings.neonAccent) {
-    currentNeonAccent = res.settings.neonAccent;
+  if (res.settings && (res.settings.neonHex || res.settings.neonAccent)) {
+    currentNeonAccent = res.settings.neonHex || res.settings.neonAccent;
   }
 });
 
@@ -24,7 +24,9 @@ chrome.storage.local.get(['settings'], (res) => {
 chrome.storage.onChanged.addListener((changes) => {
   if (changes.settings) {
     const newSettings = changes.settings.newValue || {};
-    if (newSettings.neonAccent) currentNeonAccent = newSettings.neonAccent;
+    if (newSettings.neonHex || newSettings.neonAccent) {
+      currentNeonAccent = newSettings.neonHex || newSettings.neonAccent;
+    }
   }
 });
 
