@@ -5,7 +5,7 @@
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
     "build:css": "npx tailwindcss -i ./input.css -o ./style.css",
-    "build:zip": "node build-zip.js",
+    "build:zip": "powershell -Command \"Compress-Archive -Path manifest.json,newtab.html,script.js,style.css,input.css,background.js,content.js,welcome-canvas.js,supabase.js,supabase-js.min.js,config.js,config.example.js,fonts,icons,Wallpapers -DestinationPath LinkHive-Extension-Release.zip -Force\"",
     "build": "npm run build:css && npm run build:zip"
   },
   "keywords": [],

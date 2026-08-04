@@ -1,5 +1,25 @@
+# Dependencies
 node_modules/
-.agents/
-.env
-.DS_Store
+
+# Secrets & Configs
 config.js
+.env
+
+# Release Binaries & Temp Archives
+LinkHive-Extension-Release.zip
+*.zip
+.temp_dist/
+
+# Scratch & Helper Scripts
+fix_commas.py
+build-fonts.js
+create-icons.js
+build-zip.js
+
+# IDE, OS & Obsidian Internal Files
+.agents/
+.obsidian/
+*/.obsidian/
+Obsidian/
+.DS_Store
+Thumbs.db
